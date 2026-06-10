@@ -383,11 +383,14 @@ def gv_conductor_table(cable) -> Table:
             # per-wire lengths differ; show each wire's own length
             wireinfo.append(f"{wire.length.number} {wire.length.unit}")
         # continuation marker: same conductor spans another bundle
-        if getattr(wire, "continues_to", None) is not None:
+        if (
+            getattr(wire, "continues_to", None) is not None
+            or getattr(wire, "continues_from", None) is not None
+        ):
+            # same conductor spans another bundle; show the summed cut length
+            # on every segment so the total is visible wherever the wire is read
             t = wire.chain_total_length
-            wireinfo.append(f"(cont., {t.number} {t.unit} total)")
-        elif getattr(wire, "continues_from", None) is not None:
-            wireinfo.append("(cont.)")
+            wireinfo.append(f"({t.number} {t.unit} total)")
 
         ins, outs = [], []
         for conn in cable._connections:
