@@ -388,6 +388,18 @@ def parse(
         for line in yaml_data["additional_bom_items"]:
             harness.add_additional_bom_item(line)
 
+    # continuations: splice two bundle wires into one logical conductor
+    # syntax:  continuations:
+    #            - [B1.W3, B2.W3]   # cable.<wirelabel|index> pairs
+    if yaml_data.get("continuations"):
+        for pair in yaml_data["continuations"]:
+            if len(pair) != 2:
+                raise Exception("each continuation must be a pair [from, to]")
+            (from_cable, from_wire), (to_cable, to_wire) = (
+                str(end).split(".", 1) for end in pair
+            )
+            harness.add_continuation(from_cable, from_wire, to_cable, to_wire)
+
     # harness population completed =============================================
 
     harness.populate_bom()

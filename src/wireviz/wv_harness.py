@@ -56,6 +56,27 @@ class Harness:
         self.mates = []
         self.bom = defaultdict(dict)
         self.additional_bom_items = []
+        # each entry: (from_cable, from_wire_index, to_cable, to_wire_index)
+        self.continuations = []
+
+    def _resolve_wire(self, cable_name, wire_ref):
+        # resolve "<wirelabel>" or "<int>" to a 1-based wire index on a bundle
+        cable = self.cables[cable_name]
+        if isinstance(wire_ref, str) and wire_ref in (cable.wirelabels or []):
+            return cable.wirelabels.index(wire_ref) + 1
+        return int(wire_ref)
+
+    def add_continuation(self, from_cable, from_wire, to_cable, to_wire) -> None:
+        # declare that a wire in one bundle is the SAME physical conductor as a
+        # wire in another bundle (a splice / pass-through). They are drawn joined
+        # and their cut lengths are summed for the total.
+        fi = self._resolve_wire(from_cable, from_wire)
+        ti = self._resolve_wire(to_cable, to_wire)
+        head = self.cables[from_cable].wire_objects[fi]
+        tail = self.cables[to_cable].wire_objects[ti]
+        head.continues_to = tail
+        tail.continues_from = head
+        self.continuations.append((from_cable, fi, to_cable, ti))
 
     def add_connector(self, designator: str, *args, **kwargs) -> None:
         check_old(f"Connector '{designator}'", OLD_CONNECTOR_ATTR, kwargs)
@@ -174,9 +195,14 @@ class Harness:
             if item.category == "bundle":
                 # wires of a bundle are added as individual BOM entries
                 for subitem in item.wire_objects.values():
+                    if subitem.sum_amounts_in_bom and subitem.length:
+                        # sum each wire's own length (qty_unit is the length unit)
+                        qty = item.qty * subitem.length.number
+                    else:
+                        qty = item.qty  # should be 1
                     _add(
                         hash=subitem.bom_hash,
-                        qty=item.qty,  # should be 1
+                        qty=qty,
                         designator=item.designator,  # inherit from parent item
                         category=cat,
                     )
@@ -359,6 +385,16 @@ class Harness:
                     dot.edge(l1, l2)
                 if not (r1, r2) == (None, None):
                     dot.edge(r1, r2)
+
+        # draw continuation (splice) edges joining the two segments of one wire
+        for from_cable, fi, to_cable, ti in self.continuations:
+            wire = self.cables[from_cable].wire_objects[fi]
+            if wire.color:
+                color = f"#000000:{wire.color.html_padded}:#000000"
+            else:
+                color = "#000000"
+            dot.attr("edge", color=color)
+            dot.edge(f"{from_cable}:w{fi}:e", f"{to_cable}:w{ti}:w")
 
         for mate in self.mates:
             color, dir, code_from, code_to = gv_edge_mate(mate)

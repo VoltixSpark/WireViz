@@ -29,6 +29,12 @@ additional_bom_items:  # custom items to add to BOM
   - <bom-item>           # BOM item (see below)
   ...
 
+continuations:  # splice a bundle wire to a wire in another bundle so they are
+                 # treated as ONE physical conductor (e.g. a wire that passes a
+                 # connector without terminating, then continues in another sleeve)
+  - [<cableA>.<wire>, <cableB>.<wire>]  # <wire> is a wirelabel or 1-based index
+  ...                                   # segments are drawn joined; lengths summed
+
 metadata:  # dictionary of meta-information describing the harness
   <key>   : <value>  # any number of key value pairs (see below)
   ...
@@ -110,11 +116,23 @@ tweak:  # optional tweaking of .gv output
                                 # or   length: 2.5 ft -> "ft" is used as the unit
                                 # Units are not converted during BOM generation;
                                 # different units result in separate BOM entries.
+                                # For bundles, a list of lengths may be specified
+                                # (one per wire, in the same unit), e.g.
+                                # length: [1.0, 1.0, 1.4]
+                                # Each wire's own length is shown on the diagram
+                                # and used in the BOM.
   shield: <bool/color>  # defaults to false
                         # setting to true will display the shield as a thin black line
                         # using a color (see below) will render the shield in that color
                         # A shield can be accessed by using 's' as the wire ID
   color: <color>  # see below
+  sleeve_color: <color>  # defaults to none; see below
+                         # draws a colored braided sleeve/wrap around the bundle
+                         # and shows a sleeve-color chip + "Braid" in the header
+  sleeve_length: <int/float>[ <unit>]  # optional cut length of the sleeve
+                                        # (often shorter than the wire length, e.g.
+                                        # sleeve_length: 15 in). Same unit rules as
+                                        # length. Shown next to the "Braid" chip.
   image: <image>  # see below
   notes: <str>   
 

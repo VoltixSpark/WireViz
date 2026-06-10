@@ -486,6 +486,28 @@ class WireClass:
     ignore_in_bom: Optional[bool] = False
     sum_amounts_in_bom: bool = True
     partnumbers: PartNumberInfo = None
+    # continuation (splice): this wire is the same physical conductor as another
+    # wire in a different bundle. Set by Harness.add_continuation().
+    continues_to: Optional["WireClass"] = None
+    continues_from: Optional["WireClass"] = None
+
+    @property
+    def chain_total_length(self) -> Optional[NumberAndUnit]:
+        # total cut length across all continuation segments of this conductor
+        if not self.length:
+            return None
+        # walk to the head of the chain
+        head = self
+        while head.continues_from is not None:
+            head = head.continues_from
+        total = 0
+        unit = head.length.unit if head.length else None
+        node = head
+        while node is not None:
+            if node.length:
+                total += node.length.number
+            node = node.continues_to
+        return NumberAndUnit(total, unit)
 
     @property
     def bom_hash(self) -> BomHash:
@@ -510,7 +532,7 @@ class WireClass:
         if not self.gauge:
             return None
         actual_gauge = f"{self.gauge.number} {self.gauge.unit}"
-        actual_gauge = actual_gauge.replace("mm2", "mm\u00B2")
+        actual_gauge = actual_gauge.replace("mm2", "mm\u00b2")
         return actual_gauge
 
     @property
@@ -547,6 +569,12 @@ class Cable(TopLevelGraphicalComponent):
     # wire information in particular
     wirecount: Optional[int] = None
     shield: Union[bool, MultiColor] = False
+    sleeve_color: Optional[SingleColor] = (
+        None  # outer wrap/sleeve drawn around the bundle
+    )
+    sleeve_length: Optional[NumberAndUnit] = (
+        None  # cut length of the sleeve; often shorter than the wire length
+    )
     colors: List[str] = field(default_factory=list)  # legacy
     wirelabels: List[Wire] = field(default_factory=list)  # legacy
     wire_objects: Dict[Any, WireClass] = field(default_factory=dict)  # new
@@ -571,7 +599,7 @@ class Cable(TopLevelGraphicalComponent):
         if not self.gauge:
             return None
         actual_gauge = f"{self.gauge.number} {self.gauge.unit}"
-        actual_gauge = actual_gauge.replace("mm2", "mm\u00B2")
+        actual_gauge = actual_gauge.replace("mm2", "mm\u00b2")
         return actual_gauge
 
     @property
@@ -587,15 +615,25 @@ class Cable(TopLevelGraphicalComponent):
             elif self.gauge.unit.upper() == "AWG":
                 equivalent_gauge = f" ({mm2_equiv(self.gauge.number)} mm2)"
         out = f"{actual_gauge}{equivalent_gauge}"
-        out = out.replace("mm2", "mm\u00B2")
+        out = out.replace("mm2", "mm\u00b2")
         return out
 
     @property
     def length_str(self):
         if not self.length:
             return None
+        if getattr(self, "length_list", None):
+            numbers = [l.number for l in self.length_list]
+            if min(numbers) != max(numbers):
+                return f"{min(numbers)} .. {max(numbers)} {self.length.unit}"
         out = f"{self.length.number} {self.length.unit}"
         return out
+
+    @property
+    def sleeve_length_str(self):
+        if not self.sleeve_length:
+            return None
+        return f"{self.sleeve_length.number} {self.sleeve_length.unit}"
 
     @property
     def bom_hash(self):
@@ -647,6 +685,8 @@ class Cable(TopLevelGraphicalComponent):
 
         self.bgcolor_title = SingleColor(self.bgcolor_title)
         self.color = MultiColor(self.color)
+        self.sleeve_color = SingleColor(self.sleeve_color)
+        self.sleeve_length = parse_number_and_unit(self.sleeve_length, "m")
 
         # cables do not support custom qty or amount
         if self.qty is None:
@@ -662,7 +702,16 @@ class Cable(TopLevelGraphicalComponent):
         # and assign them the same way to bundles.
 
         self.gauge = parse_number_and_unit(self.gauge, "mm2")
-        self.length = parse_number_and_unit(self.length, "m")
+        if isinstance(self.length, list):
+            # per-wire lengths (bundles only; validated below once wirecount is known)
+            self.length_list = [parse_number_and_unit(l, "m") for l in self.length]
+            units = set(l.unit for l in self.length_list)
+            if len(units) > 1:
+                raise Exception("all wire lengths must use the same unit")
+            self.length = max(self.length_list, key=lambda l: l.number)
+        else:
+            self.length_list = None
+            self.length = parse_number_and_unit(self.length, "m")
         self.amount = self.length  # for BOM
 
         if self.wirecount:  # number of wires explicitly defined
@@ -706,6 +755,14 @@ class Cable(TopLevelGraphicalComponent):
                 else:
                     raise Exception("lists of part data are only supported for bundles")
 
+        # if a list of lengths is provided,
+        # check this is a bundle and that it matches the wirecount.
+        if self.length_list is not None:
+            if self.category != "bundle":
+                raise Exception("lists of lengths are only supported for bundles")
+            if len(self.length_list) != self.wirecount:
+                raise Exception("lists of lengths must match wirecount")
+
         # all checks have passed
         wire_tuples = zip_longest(
             # TODO: self.wire_ids
@@ -725,7 +782,9 @@ class Cable(TopLevelGraphicalComponent):
                 type=self.type,
                 subtype=self.subtype,
                 gauge=self.gauge,
-                length=self.length,
+                length=(
+                    self.length_list[wire_index] if self.length_list else self.length
+                ),
                 sum_amounts_in_bom=self.sum_amounts_in_bom,
                 ignore_in_bom=self.ignore_in_bom,
                 partnumbers=self._get_wire_partnumber(wire_index),
