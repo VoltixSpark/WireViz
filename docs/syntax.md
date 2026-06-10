@@ -118,6 +118,10 @@ tweak:  # optional tweaking of .gv output
   sleeve_color: <color>  # defaults to none; see below
                          # draws a colored braided sleeve/wrap around the bundle
                          # and shows a "+ Sleeve" indicator with the color name
+  sleeve_length: <int/float>[ <unit>]  # optional cut length of the sleeve
+                                        # (often shorter than the wire length, e.g.
+                                        # sleeve_length: 15 in). Same unit rules as
+                                        # length. Shown next to the "+ Sleeve" indicator.
   image: <image>  # see below
   notes: <str>   
 

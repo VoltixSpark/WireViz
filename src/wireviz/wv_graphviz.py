@@ -62,7 +62,18 @@ def gv_node_component(component: Component) -> Table:
             component.length_str,
             str(component.color) if component.color else None,
             "+ Sleeve" if component.sleeve_color else None,
-            str(component.sleeve_color) if component.sleeve_color else None,
+            (
+                " ".join(
+                    s
+                    for s in (
+                        str(component.sleeve_color) if component.sleeve_color else None,
+                        component.sleeve_length_str,
+                    )
+                    if s
+                )
+                if component.sleeve_color
+                else None
+            ),
         ]
 
     if component.additional_parameters:
