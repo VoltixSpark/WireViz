@@ -4,6 +4,11 @@
 
 TODO
 
+### New features
+
+- Add `sleeve_color` cable attribute to draw a colored braided sleeve/wrap around a bundle ([#503](https://github.com/wireviz/WireViz/issues/503))
+- Add `sleeve_length` cable attribute to specify the sleeve cut length, often shorter than the wire length ([#503](https://github.com/wireviz/WireViz/issues/503))
+
 
 ## [0.4.1](https://github.com/wireviz/WireViz/tree/v0.4.1) (2024-07-13)
 

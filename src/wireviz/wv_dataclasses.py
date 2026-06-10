@@ -547,6 +547,12 @@ class Cable(TopLevelGraphicalComponent):
     # wire information in particular
     wirecount: Optional[int] = None
     shield: Union[bool, MultiColor] = False
+    sleeve_color: Optional[SingleColor] = (
+        None  # outer wrap/sleeve drawn around the bundle
+    )
+    sleeve_length: Optional[NumberAndUnit] = (
+        None  # cut length of the sleeve; often shorter than the wire length
+    )
     colors: List[str] = field(default_factory=list)  # legacy
     wirelabels: List[Wire] = field(default_factory=list)  # legacy
     wire_objects: Dict[Any, WireClass] = field(default_factory=dict)  # new
@@ -602,6 +608,12 @@ class Cable(TopLevelGraphicalComponent):
         return out
 
     @property
+    def sleeve_length_str(self):
+        if not self.sleeve_length:
+            return None
+        return f"{self.sleeve_length.number} {self.sleeve_length.unit}"
+
+    @property
     def bom_hash(self):
         if self.category == "bundle":
             # This line should never be reached, since caller checks
@@ -651,6 +663,8 @@ class Cable(TopLevelGraphicalComponent):
 
         self.bgcolor_title = SingleColor(self.bgcolor_title)
         self.color = MultiColor(self.color)
+        self.sleeve_color = SingleColor(self.sleeve_color)
+        self.sleeve_length = parse_number_and_unit(self.sleeve_length, "m")
 
         # cables do not support custom qty or amount
         if self.qty is None:
