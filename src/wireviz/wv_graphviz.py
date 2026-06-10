@@ -61,19 +61,7 @@ def gv_node_component(component: Component) -> Table:
             "+ S" if component.shield else None,
             component.length_str,
             str(component.color) if component.color else None,
-            "+ Sleeve" if component.sleeve_color else None,
-            (
-                " ".join(
-                    s
-                    for s in (
-                        str(component.sleeve_color) if component.sleeve_color else None,
-                        component.sleeve_length_str,
-                    )
-                    if s
-                )
-                if component.sleeve_color
-                else None
-            ),
+            gv_sleeve_header_cell(component),
         ]
 
     if component.additional_parameters:
@@ -312,6 +300,26 @@ def gv_connector_loops(connector: Connector) -> List:
         tail = f"{connector.designator}:p{loop[1]}{loop_side}:{loop_dir}"
         loop_edges.append((head, tail))
     return loop_edges
+
+
+def gv_sleeve_header_cell(component) -> Optional[Td]:
+    """Header indicator for a sleeved bundle: a sleeve-color chip + "Braid [len]"."""
+    if not component.sleeve_color:
+        return None
+    chip = Td(
+        "",
+        bgcolor=component.sleeve_color.html,
+        sides="TBLR",
+        height=10,
+        width=10,
+        fixedsize="true",
+    )
+    label = "Braid"
+    if component.sleeve_length_str:
+        label = f"Braid {component.sleeve_length_str}"
+    text = Td(label, align="left")
+    inner = Table(Tr([chip, Td(" "), text]), border=0, cellborder=0, cellspacing=0)
+    return Td(inner)
 
 
 def gv_sleeve_braid_band(
