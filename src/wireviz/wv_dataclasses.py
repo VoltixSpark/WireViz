@@ -486,6 +486,28 @@ class WireClass:
     ignore_in_bom: Optional[bool] = False
     sum_amounts_in_bom: bool = True
     partnumbers: PartNumberInfo = None
+    # continuation (splice): this wire is the same physical conductor as another
+    # wire in a different bundle. Set by Harness.add_continuation().
+    continues_to: Optional["WireClass"] = None
+    continues_from: Optional["WireClass"] = None
+
+    @property
+    def chain_total_length(self) -> Optional[NumberAndUnit]:
+        # total cut length across all continuation segments of this conductor
+        if not self.length:
+            return None
+        # walk to the head of the chain
+        head = self
+        while head.continues_from is not None:
+            head = head.continues_from
+        total = 0
+        unit = head.length.unit if head.length else None
+        node = head
+        while node is not None:
+            if node.length:
+                total += node.length.number
+            node = node.continues_to
+        return NumberAndUnit(total, unit)
 
     @property
     def bom_hash(self) -> BomHash:

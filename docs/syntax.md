@@ -29,6 +29,12 @@ additional_bom_items:  # custom items to add to BOM
   - <bom-item>           # BOM item (see below)
   ...
 
+continuations:  # splice a bundle wire to a wire in another bundle so they are
+                 # treated as ONE physical conductor (e.g. a wire that passes a
+                 # connector without terminating, then continues in another sleeve)
+  - [<cableA>.<wire>, <cableB>.<wire>]  # <wire> is a wirelabel or 1-based index
+  ...                                   # segments are drawn joined; lengths summed
+
 metadata:  # dictionary of meta-information describing the harness
   <key>   : <value>  # any number of key value pairs (see below)
   ...
