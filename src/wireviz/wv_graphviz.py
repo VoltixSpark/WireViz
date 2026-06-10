@@ -318,7 +318,9 @@ def gv_sleeve_header_cell(component) -> Optional[Td]:
     if component.sleeve_length_str:
         label = f"Braid {component.sleeve_length_str}"
     text = Td(label, align="left")
-    inner = Table(Tr([chip, Td(" "), text]), border=0, cellborder=0, cellspacing=0)
+    inner = Table(
+        Tr([chip, text]), border=0, cellborder=0, cellspacing=0, cellpadding=2
+    )
     return Td(inner)
 
 
