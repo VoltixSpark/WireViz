@@ -318,6 +318,9 @@ def gv_conductor_table(cable) -> Table:
             wireinfo.append(str(wire.id))
         wireinfo.append(str(wire.color))
         wireinfo.append(wire.label)
+        if getattr(cable, "length_list", None) and not isinstance(wire, ShieldClass):
+            # per-wire lengths differ; show each wire's own length
+            wireinfo.append(f"{wire.length.number} {wire.length.unit}")
 
         ins, outs = [], []
         for conn in cable._connections:
