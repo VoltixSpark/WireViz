@@ -110,6 +110,11 @@ tweak:  # optional tweaking of .gv output
                                 # or   length: 2.5 ft -> "ft" is used as the unit
                                 # Units are not converted during BOM generation;
                                 # different units result in separate BOM entries.
+                                # For bundles, a list of lengths may be specified
+                                # (one per wire, in the same unit), e.g.
+                                # length: [1.0, 1.0, 1.4]
+                                # Each wire's own length is shown on the diagram
+                                # and used in the BOM.
   shield: <bool/color>  # defaults to false
                         # setting to true will display the shield as a thin black line
                         # using a color (see below) will render the shield in that color

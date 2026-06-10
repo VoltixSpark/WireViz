@@ -174,9 +174,14 @@ class Harness:
             if item.category == "bundle":
                 # wires of a bundle are added as individual BOM entries
                 for subitem in item.wire_objects.values():
+                    if subitem.sum_amounts_in_bom and subitem.length:
+                        # sum each wire's own length (qty_unit is the length unit)
+                        qty = item.qty * subitem.length.number
+                    else:
+                        qty = item.qty  # should be 1
                     _add(
                         hash=subitem.bom_hash,
-                        qty=item.qty,  # should be 1
+                        qty=qty,
                         designator=item.designator,  # inherit from parent item
                         category=cat,
                     )
