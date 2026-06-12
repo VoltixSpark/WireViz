@@ -149,6 +149,15 @@ def gv_additional_component_table(component):
             ]
             rows.append(Tr(secondline))
 
+        if subitem.image:
+            image_cell, caption_cell = image_and_caption_cells(subitem)
+            if image_cell:
+                image_cell.update_attribs(colspan=5)
+                rows.append(Tr(image_cell))
+            if caption_cell:
+                caption_cell.update_attribs(colspan=5)
+                rows.append(Tr(caption_cell))
+
     return Table(rows, border=1, cellborder=0, cellpadding=3, cellspacing=0)
 
 
