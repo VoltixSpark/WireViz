@@ -263,9 +263,12 @@ class AdditionalComponent(GraphicalComponent):
     explicit_qty: bool = True
     amount_computed: Optional[NumberAndUnit] = None
     note: str = None
+    image: Optional[Image] = None
 
     def __post_init__(self):
         super().__post_init__()
+        if isinstance(self.image, dict):
+            self.image = Image(**self.image)
 
         if isinstance(self.qty_multiplier, float) or isinstance(
             self.qty_multiplier, int
