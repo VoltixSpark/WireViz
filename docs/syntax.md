@@ -133,6 +133,12 @@ tweak:  # optional tweaking of .gv output
                                         # (often shorter than the wire length, e.g.
                                         # sleeve_length: 15 in). Same unit rules as
                                         # length. Shown next to the "Braid" chip.
+  jacket: <bool/color>  # defaults to false
+                        # draws a solid cable jacket as a thick frame around the
+                        # conductors, to distinguish a jacketed cable from loose
+                        # bundle wires. true renders a black frame; a color (see
+                        # below) renders the frame in that color. Takes precedence
+                        # over sleeve_color for the outer frame.
   image: <image>  # see below
   notes: <str>   
 

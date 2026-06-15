@@ -370,6 +370,9 @@ def gv_conductor_table(cable) -> Table:
     # a colored sleeve is drawn as a woven braid band across the top and bottom
     # of the conductor bundle, with thin colored side rails around the table
     sleeve_hex = cable.sleeve_color.html if cable.sleeve_color else None
+    # a solid jacket is drawn as a thick frame around the conductor block
+    # (no woven bands) so it reads as a continuous outer jacket, not a braid.
+    jacket_hex = cable.jacket.html if getattr(cable, "jacket", None) else None
     sleeve_colspan = 6 if cable.category == "bundle" else 5
     rows.append(Tr(Td("&nbsp;")))  # spacer row on top
     if sleeve_hex:
@@ -442,6 +445,12 @@ def gv_conductor_table(cable) -> Table:
     rows.append(Tr(Td("&nbsp;")))  # spacer row on bottom
     if sleeve_hex:
         rows.append(Tr(Td(gv_sleeve_braid_band(sleeve_hex), colspan=sleeve_colspan)))
+
+    # outer frame: a solid jacket takes precedence and is drawn as a thick
+    # frame in the jacket color; a sleeve (braid) uses a thinner side rail.
+    if jacket_hex:
+        tbl = Table(rows, border=4, color=jacket_hex, cellborder=0, cellspacing=0)
+    elif sleeve_hex:
         tbl = Table(rows, border=2, color=sleeve_hex, cellborder=0, cellspacing=0)
     else:
         tbl = Table(rows, border=0, cellborder=0, cellspacing=0)

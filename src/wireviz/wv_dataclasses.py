@@ -578,6 +578,10 @@ class Cable(TopLevelGraphicalComponent):
     sleeve_length: Optional[NumberAndUnit] = (
         None  # cut length of the sleeve; often shorter than the wire length
     )
+    jacket: Union[bool, SingleColor] = (
+        False  # solid outer jacket drawn as a thick frame around the conductors;
+        # true = black, or a color (mirrors the shield: <bool/color> idiom)
+    )
     colors: List[str] = field(default_factory=list)  # legacy
     wirelabels: List[Wire] = field(default_factory=list)  # legacy
     wire_objects: Dict[Any, WireClass] = field(default_factory=dict)  # new
@@ -690,6 +694,13 @@ class Cable(TopLevelGraphicalComponent):
         self.color = MultiColor(self.color)
         self.sleeve_color = SingleColor(self.sleeve_color)
         self.sleeve_length = parse_number_and_unit(self.sleeve_length, "m")
+        # jacket: true -> black; a color string -> that color; false/none -> off
+        if self.jacket is True:
+            self.jacket = SingleColor("BK")
+        else:
+            self.jacket = SingleColor(
+                self.jacket if isinstance(self.jacket, str) else None
+            )
 
         # cables do not support custom qty or amount
         if self.qty is None:
