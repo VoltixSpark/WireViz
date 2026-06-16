@@ -147,6 +147,19 @@ def parse(
                                 image["src"] = smart_file_resolve(
                                     image_path, image_paths
                                 )
+                        # additional-component images need the same relative-path
+                        # resolution as the component's own image, or they fail to
+                        # render (the src stays relative to the process cwd).
+                        for comp in attribs.get("additional_components") or []:
+                            if not isinstance(comp, dict):
+                                continue
+                            comp_image = comp.get("image")
+                            if isinstance(comp_image, dict):
+                                comp_src = comp_image.get("src")
+                                if comp_src and not Path(comp_src).is_absolute():
+                                    comp_image["src"] = smart_file_resolve(
+                                        comp_src, image_paths
+                                    )
                         if sec == "connectors":
                             template_connectors[key] = attribs
                         elif sec == "cables":
