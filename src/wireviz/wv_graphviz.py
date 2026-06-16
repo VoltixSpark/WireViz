@@ -327,9 +327,18 @@ def gv_sleeve_header_cell(component) -> Optional[Td]:
     if component.sleeve_length_str:
         label = f"Braid {component.sleeve_length_str}"
     text = Td(label, align="left")
-    inner = Table(
-        Tr([chip, text]), border=0, cellborder=0, cellspacing=0, cellpadding=2
-    )
+    rows = [Tr([chip, text])]
+
+    # show the sleeve's part number / manufacturer in the box, like a cable jacket
+    sleeve = getattr(component, "sleeve", None)
+    if sleeve is not None and sleeve.has_pn_info:
+        pn_cells = partnumbers2list(sleeve.partnumbers)
+        if pn_cells:
+            pn_str = ", ".join(pn for pn in pn_cells if pn)
+            if pn_str:
+                rows.append(Tr([Td(pn_str, align="left", colspan=2)]))
+
+    inner = Table(rows, border=0, cellborder=0, cellspacing=0, cellpadding=2)
     return Td(inner)
 
 
@@ -346,7 +355,13 @@ def gv_sleeve_braid_band(
         h = hex_main.lstrip("#")
         r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
         f = 0.55  # darken factor for the interlacing strands
-        hex_alt = f"#{int(r * f):02x}{int(g * f):02x}{int(b * f):02x}"
+        ra, ga, ba = int(r * f), int(g * f), int(b * f)
+        # a near-black sleeve darkens to itself (no contrast); lighten to a dark
+        # grey instead so the weave still reads as alternating cells.
+        if max(r - ra, g - ga, b - ba) < 24:
+            lift = 0x40
+            ra, ga, ba = min(r + lift, 255), min(g + lift, 255), min(b + lift, 255)
+        hex_alt = f"#{ra:02x}{ga:02x}{ba:02x}"
     except (ValueError, IndexError):
         hex_alt = hex_main  # non-hex color name: fall back to a single tone
     band_rows = []

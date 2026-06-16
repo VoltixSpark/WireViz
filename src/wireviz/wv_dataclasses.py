@@ -564,6 +564,33 @@ class Connection:
 
 
 @dataclass
+class Sleeve(Component):
+    """Outer sleeving/braid over a bundle or cable, carrying its own BOM identity.
+
+    Expressed in YAML as a nested mapping on a cable, e.g.:
+        sleeve:
+          color: BK
+          length: 10 in
+          pn: CCP0.75BK
+          mpn: CCP0.75BK
+          manufacturer: Techflex
+    The cut length drives the BOM amount (summed by part number, like wire
+    length). `color`/`length` also feed the existing braid-band rendering.
+    """
+
+    color: Optional[SingleColor] = None
+    length: Optional[NumberAndUnit] = None
+
+    def __post_init__(self):
+        if self.type is None:
+            self.type = "Braided sleeving"
+        super().__post_init__()
+        self.color = SingleColor(self.color)
+        self.length = parse_number_and_unit(self.length, "m")
+        self.amount = self.length  # length-based BOM quantity
+
+
+@dataclass
 class Cable(TopLevelGraphicalComponent):
     # cable-specific properties
     gauge: Optional[NumberAndUnit] = None
@@ -577,6 +604,10 @@ class Cable(TopLevelGraphicalComponent):
     )
     sleeve_length: Optional[NumberAndUnit] = (
         None  # cut length of the sleeve; often shorter than the wire length
+    )
+    sleeve: Optional[Any] = (
+        None  # nested sleeve: object (color/length/pn/mpn/manufacturer) -> Sleeve;
+        # back-fills sleeve_color/sleeve_length and adds the sleeve to the BOM
     )
     jacket: Union[bool, SingleColor] = (
         False  # solid outer jacket drawn as a thick frame around the conductors;
@@ -692,6 +723,31 @@ class Cable(TopLevelGraphicalComponent):
 
         self.bgcolor_title = SingleColor(self.bgcolor_title)
         self.color = MultiColor(self.color)
+
+        # nested sleeve: object (canonical). It back-fills the flat
+        # sleeve_color/sleeve_length used by rendering (nested wins when both are
+        # present) and adds a BOM line for the sleeve. The flat sleeve_color/
+        # sleeve_length keys remain supported as aliases (no BOM line, as before).
+        if isinstance(self.sleeve, dict):
+            _sl = self.sleeve
+            if _sl.get("color") is not None:
+                self.sleeve_color = _sl.get("color")
+            if _sl.get("length") is not None:
+                self.sleeve_length = _sl.get("length")
+            self.sleeve = Sleeve(
+                type=_sl.get("type"),
+                subtype=_sl.get("subtype"),
+                color=_sl.get("color"),
+                length=_sl.get("length"),
+                pn=_sl.get("pn"),
+                manufacturer=_sl.get("manufacturer"),
+                mpn=_sl.get("mpn"),
+                supplier=_sl.get("supplier"),
+                spn=_sl.get("spn"),
+            )
+        elif self.sleeve is not None and not isinstance(self.sleeve, Sleeve):
+            raise Exception("'sleeve' must be a mapping of sleeve properties")
+
         self.sleeve_color = SingleColor(self.sleeve_color)
         self.sleeve_length = parse_number_and_unit(self.sleeve_length, "m")
         # jacket: true -> black; a color string -> that color; false/none -> off

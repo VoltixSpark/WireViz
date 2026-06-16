@@ -66,6 +66,40 @@ class Harness:
             return cable.wirelabels.index(wire_ref) + 1
         return int(wire_ref)
 
+    @staticmethod
+    def _continuation_merges(prev, nxt) -> bool:
+        # `nxt` continues from `prev`. Decide whether nxt folds into prev's BOM
+        # entry (same physical wire, lengths summed) or is a distinct part.
+        #   - A segment with no part identity and no gauge is a pure drawing
+        #     pass-through (e.g. a convergence bundle) -> always merge.
+        #   - Otherwise merge only if it is the same part as its predecessor
+        #     (same description and part numbers) -> a single wire split across
+        #     bundles by a sleeving change.
+        #   - Two different parts joined end to end (e.g. a jumper soldered to an
+        #     extension wire) do NOT merge; each stays its own BOM line.
+        pn = getattr(nxt, "partnumbers", None)
+        nxt_has_pn = pn is not None and any(
+            [pn.pn, pn.manufacturer, pn.mpn, pn.supplier, pn.spn]
+        )
+        if not nxt_has_pn and nxt.gauge is None:
+            return True
+        return (
+            nxt.description == prev.description
+            and getattr(nxt, "partnumbers", None) == getattr(prev, "partnumbers", None)
+        )
+
+    def _merged_downstream_length(self, wire) -> float:
+        # Sum the lengths of downstream continuation segments that merge into
+        # `wire` (same physical conductor continuing across bundles). Segments
+        # that are distinct parts stop the walk and are not counted here.
+        total = 0
+        node, nxt = wire, wire.continues_to
+        while nxt is not None and self._continuation_merges(node, nxt):
+            if nxt.length:
+                total += nxt.length.number
+            node, nxt = nxt, nxt.continues_to
+        return total
+
     def add_continuation(self, from_cable, from_wire, to_cable, to_wire) -> None:
         # declare that a wire in one bundle is the SAME physical conductor as a
         # wire in another bundle (a splice / pass-through). They are drawn joined
@@ -152,10 +186,25 @@ class Harness:
         for item in all_bom_relevant_items:
             if item.ignore_in_bom:
                 continue
-            if not item.bom_hash in self.bom:
-                print(f"{item}'s hash' not found in BOM dict.")  # Should not happen
+            # A continuation segment that merges into its predecessor shares that
+            # predecessor's BOM entry, so resolve the BOM ID through the chain
+            # (its own hash is not in the BOM). Stop walking at a non-merging edge:
+            # a distinct part keeps its own entry.
+            hash_item = item
+            merged_tail = False
+            prev = getattr(hash_item, "continues_from", None)
+            while prev is not None and self._continuation_merges(prev, hash_item):
+                hash_item = prev
+                merged_tail = True
+                prev = getattr(hash_item, "continues_from", None)
+            if not hash_item.bom_hash in self.bom:
+                # A merged segment whose head lives inside a jacketed cable is
+                # accounted for by the whole-cable BOM line, so the per-wire hash
+                # is legitimately absent. Only warn for the unexpected case.
+                if not merged_tail:
+                    print(f"{item}'s hash' not found in BOM dict.")  # Should not happen
                 continue
-            item.bom_id = self.bom[item.bom_hash]["id"]
+            item.bom_id = self.bom[hash_item.bom_hash]["id"]
 
     def _add_to_internal_bom(self, item: Component):
         if item.ignore_in_bom:
@@ -195,9 +244,19 @@ class Harness:
             if item.category == "bundle":
                 # wires of a bundle are added as individual BOM entries
                 for subitem in item.wire_objects.values():
+                    # A continuation segment that merges into its predecessor is
+                    # the same physical wire; skip it so only one BOM entry is
+                    # created (the predecessor accounts for the summed length).
+                    prev = subitem.continues_from
+                    if prev is not None and self._continuation_merges(prev, subitem):
+                        continue
                     if subitem.sum_amounts_in_bom and subitem.length:
-                        # sum each wire's own length (qty_unit is the length unit)
-                        qty = item.qty * subitem.length.number
+                        # sum this wire plus any downstream segments that merge
+                        # into it (same physical conductor across bundles).
+                        total = subitem.length.number + self._merged_downstream_length(
+                            subitem
+                        )
+                        qty = item.qty * total
                     else:
                         qty = item.qty  # should be 1
                     _add(
@@ -207,11 +266,43 @@ class Harness:
                         category=cat,
                     )
             else:
+                item_length = getattr(item, "length", None)
+                if item.sum_amounts_in_bom and item_length:
+                    # A jacketed cable's conductors may continue into a convergence
+                    # bundle; that run is extra cable stock. Add it only when every
+                    # conductor extends by the same amount (otherwise a single
+                    # per-cable length is ill-defined, so fall back to no extension).
+                    exts = {
+                        self._merged_downstream_length(w)
+                        for w in getattr(item, "wire_objects", {}).values()
+                    }
+                    ext = exts.pop() if len(exts) == 1 else 0
+                    qty = item.qty * (item_length.number + ext)
+                else:
+                    qty = item.qty
                 _add(
                     hash=item.bom_hash,
-                    qty=item.qty,  # should be 1
+                    qty=qty,
                     designator=item.designator,
                     category=cat,
+                )
+
+            # sleeve over a cable/bundle, if it carries part-number info
+            sleeve = getattr(item, "sleeve", None)
+            if (
+                sleeve is not None
+                and sleeve.has_pn_info
+                and not sleeve.ignore_in_bom
+            ):
+                if sleeve.sum_amounts_in_bom and sleeve.amount:
+                    sleeve_qty = item.qty * sleeve.amount.number
+                else:
+                    sleeve_qty = item.qty
+                _add(
+                    hash=sleeve.bom_hash,
+                    qty=sleeve_qty,
+                    designator=item.designator,
+                    category=BomCategory.ADDITIONAL_INSIDE,
                 )
 
             if item.additional_components:

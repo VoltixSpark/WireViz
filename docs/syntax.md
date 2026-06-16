@@ -72,6 +72,8 @@ tweak:  # optional tweaking of .gv output
   pincount: <int>    # if omitted, is set to length of specified list(s)
   pins: <List>       # if omitted, is autofilled with [1, 2, ..., pincount]
   pinlabels: <List>  # if omitted, is autofilled with blanks
+                     # NOTE: pins/pinlabels are YAML lists; a bare string is
+                     # split per character (use [A] not A). See colors below.
 
   # pin color marks (optional)
   pincolors: <List>  # list of colors to be assigned to the respective pins;
@@ -133,6 +135,24 @@ tweak:  # optional tweaking of .gv output
                                         # (often shorter than the wire length, e.g.
                                         # sleeve_length: 15 in). Same unit rules as
                                         # length. Shown next to the "Braid" chip.
+  sleeve:               # nested sleeve object (fork ext; dev/unreleased, targets
+                        # harness-ext-1.3). Canonical replacement for the flat
+                        # sleeve_color/sleeve_length keys above, which remain
+                        # supported as aliases (nested wins if both are given).
+                        # Unlike the flat keys, a sleeve: with part-number info
+                        # is added to the BOM automatically (no additional_bom_items
+                        # entry needed) and its PN/manufacturer print in the box,
+                        # like a cable jacket. length drives the BOM amount and is
+                        # summed by part number across cables/bundles.
+    color: <color>           # also draws the braid band (as sleeve_color does)
+    length: <int/float>[ <unit>]  # cut length; BOM amount, summed by PN
+    pn: <str>                # [internal] part number (BOM aggregation key)
+    mpn: <str>               # manufacturer part number
+    manufacturer: <str>      # manufacturer name
+    supplier: <str>          # optional
+    spn: <str>               # optional, supplier part number
+    type: <str>              # optional; BOM description (default "Braided sleeving")
+    subtype: <str>           # optional; appended to the description
   jacket: <bool/color>  # defaults to false
                         # draws a solid cable jacket as a thick frame around the
                         # conductors, to distinguish a jacketed cable from loose
@@ -160,10 +180,16 @@ tweak:  # optional tweaking of .gv output
   #                         color code (see below) to match the wirecount
   # wirecount + colors      colors list is trimmed or repeated to match the wirecount
   wirecount: <int>
-  colors: <List>     # list of colors (see below)
+  colors: <List>     # list of colors (see below).
+                     # IMPORTANT: must be a YAML list, even for a single wire.
+                     # A bare string is iterated CHARACTER BY CHARACTER, so
+                     #   colors: GNYE   -> 4 wires (G, N, Y, E)   [wrong]
+                     #   colors: [GNYE] -> 1 green-yellow wire     [correct]
   color_code: <str>  # one of the supported cable color codes (see below)
 
-  wirelabels: <List>  # optional; one label for each wire
+  wirelabels: <List>  # optional; one label for each wire.
+                      # Same list rule as colors: use [W1], not a bare string
+                      # (a bare string is split per character).
 
   # rendering information (all optional)
   bgcolor: <color>          # Background color of diagram cable box
@@ -451,6 +477,8 @@ Parts can be added to a connector or cable in the section `<additional-component
   supplier: <str>      # supplier name  
   spn: <str>           # supplier part number
   bgcolor: <color>     # Background color of entry in diagram component box
+  image: <image>       # optional image with caption, shown in the parent
+                       # connector/cable box (see Images below)
 ```
 
 Alternatively items can be added to just the BOM by putting them in the section `<bom-item>` above.
