@@ -2,6 +2,7 @@
 
 import base64
 import re
+from importlib import resources
 from pathlib import Path
 from typing import Callable, Dict, List, Union
 
@@ -16,6 +17,71 @@ from wireviz.wv_utils import (
 )
 
 mime_subtype_replacements = {"jpg": "jpeg", "tif": "tiff"}
+
+# GraphViz reserves each HTML-table cell's width using Arial metrics and bakes a
+# fixed geometry into the SVG, but embeds no font (the SVG just declares
+# font-family="arial"). Where Arial is absent (common in PDF export and on
+# non-Windows viewers) the viewer substitutes a wider font, so rendered text is
+# wider than the reserved cell and trailing glyphs spill past the cell border.
+# Embedding Liberation Sans (a libre metric-clone of Arial, advance widths equal)
+# and forcing the diagram text to resolve to it makes the rendered width match
+# the width GraphViz already reserved, on every viewer.
+_FONT_FACES = (
+    # (font-family weight value, package-data filename)
+    ("normal", "LiberationSans-Regular.woff2"),
+    ("bold", "LiberationSans-Bold.woff2"),
+)
+
+
+def _font_b64(filename: str) -> Union[str, None]:
+    """Return the base64 of a bundled font file, or None if it is missing.
+
+    Missing font data must never crash a render, so callers degrade gracefully
+    (skip the embed) when this returns None."""
+    try:
+        data = (resources.files("wireviz") / "fonts" / filename).read_bytes()
+    except (FileNotFoundError, ModuleNotFoundError, OSError):
+        return None
+    return base64.b64encode(data).decode("ascii")
+
+
+def build_font_style_block() -> str:
+    """Build an SVG <style> block that embeds Liberation Sans via @font-face and
+    forces the diagram text to use it.
+
+    Returns "" if no font data could be loaded, so the SVG is still emitted
+    (just without the embedded font) rather than failing."""
+    faces = []
+    for weight, filename in _FONT_FACES:
+        b64 = _font_b64(filename)
+        if b64 is None:
+            continue
+        faces.append(
+            "@font-face{font-family:'Liberation Sans';"
+            f"font-style:normal;font-weight:{'700' if weight == 'bold' else '400'};"
+            f"src:url(data:font/woff2;base64,{b64}) format('woff2');}}"
+        )
+    if not faces:
+        return ""
+    # The !important rule wins over GraphViz's per-<text> font-family="arial"
+    # presentation attribute. Arial stays as a fallback for the (rare) case the
+    # embedded face fails to load.
+    rule = "text{font-family:'Liberation Sans',Arial,sans-serif !important;}"
+    return "<style>" + "".join(faces) + rule + "</style>"
+
+
+def inject_svg_font_style(svg_in: str) -> str:
+    """Insert the embedded-font <style> block right after the opening <svg> tag.
+
+    No-op (returns the input unchanged) if the SVG has no opening tag or no font
+    data is available."""
+    style = build_font_style_block()
+    if not style:
+        return svg_in
+    # already injected (e.g. SVG re-processed): do not double-insert
+    if "'Liberation Sans'" in svg_in:
+        return svg_in
+    return re.sub(r"(<svg\b[^>]*>)", r"\1" + style, svg_in, count=1)
 
 
 # TODO: Share cache and code between data_URI_base64() and embed_svg_images()
@@ -54,7 +120,10 @@ def embed_svg_images(svg_in: str, base_path: Union[str, Path] = Path.cwd()) -> s
         image_tag(r"(?P<PRE> [^>]*?)?", r'(?P<URL>[^"]*?)', r"(?P<POST> [^>]*?)?"),
         re.IGNORECASE,
     )
-    return pattern.sub(replace, svg_in)
+    svg_out = pattern.sub(replace, svg_in)
+    # embed Liberation Sans so cell text stops overflowing borders on viewers
+    # without Arial; degrades to a no-op if the bundled font is unavailable.
+    return inject_svg_font_style(svg_out)
 
 
 def get_mime_subtype(filename: Union[str, Path]) -> str:

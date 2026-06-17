@@ -49,11 +49,15 @@ def gv_node_component(
         isinstance(component, Connector) and component.style == "simple"
     )
 
+    # extra horizontal cellpadding on the type/subtype info cells: a small safety
+    # margin so any residual font-metric drift in a viewer never pushes a
+    # trailing glyph (")", "p") across the cell border. Conservative on purpose.
+    _INFO_PAD = 5
     if isinstance(component, Connector):
         line_info = [
             bom_bubble(component.bom_id) if show_bom_references else None,
-            html_line_breaks(component.type),
-            html_line_breaks(component.subtype),
+            Td(html_line_breaks(component.type), cellpadding=_INFO_PAD),
+            Td(html_line_breaks(component.subtype), cellpadding=_INFO_PAD),
             f"{component.pincount}-pin" if component.show_pincount else None,
             str(component.color) if component.color else None,
         ]
@@ -62,7 +66,7 @@ def gv_node_component(
             bom_bubble(component.bom_id)
             if (show_bom_references and component.category != "bundle")
             else None,
-            html_line_breaks(component.type),
+            Td(html_line_breaks(component.type), cellpadding=_INFO_PAD),
             f"{component.wirecount}x" if component.show_wirecount else None,
             component.gauge_str_with_equiv,
             "+ S" if component.shield else None,
@@ -176,7 +180,10 @@ def gv_additional_component_table(
                 caption_cell.update_attribs(colspan=5)
                 rows.append(Tr(caption_cell))
 
-    return Table(rows, border=1, cellborder=0, cellpadding=3, cellspacing=0)
+    # cellpadding 5 (was 3): small horizontal safety margin so a long
+    # description never has a trailing glyph cross the cell border under a
+    # viewer's font-metric drift. Matches the info-row _INFO_PAD bump.
+    return Table(rows, border=1, cellborder=0, cellpadding=5, cellspacing=0)
 
 
 def calculate_node_bgcolor(component, harness_options):

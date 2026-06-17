@@ -28,7 +28,14 @@ setup(
     keywords="cable connector hardware harness wiring wiring-diagram wiring-harness",
     url=APP_URL,
     package_dir={"": "src"},
-    package_data={CMD_NAME: ["templates/*.html"]},
+    package_data={
+        CMD_NAME: [
+            "templates/*.html",
+            "fonts/*.woff2",
+            "fonts/LICENSE",
+            "fonts/AUTHORS",
+        ]
+    },
     packages=find_packages("src"),
     entry_points={
         "console_scripts": [
