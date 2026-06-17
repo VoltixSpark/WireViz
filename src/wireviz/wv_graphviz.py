@@ -25,7 +25,7 @@ from wireviz.wv_html import Img, Table, Td, Tr
 from wireviz.wv_utils import html_line_breaks, remove_links
 
 
-def gv_node_component(component: Component) -> Table:
+def gv_node_component(component: Component, show_part_numbers: bool = True) -> Table:
     # If no wires connected (except maybe loop wires)?
     if isinstance(component, Connector):
         if not (component.ports_left or component.ports_right):
@@ -38,7 +38,7 @@ def gv_node_component(component: Component) -> Table:
     else:
         line_name = None
 
-    line_pn = partnumbers2list(component.partnumbers)
+    line_pn = partnumbers2list(component.partnumbers) if show_part_numbers else None
 
     is_simple_connector = (
         isinstance(component, Connector) and component.style == "simple"
@@ -61,7 +61,7 @@ def gv_node_component(component: Component) -> Table:
             "+ S" if component.shield else None,
             component.length_str,
             str(component.color) if component.color else None,
-            gv_sleeve_header_cell(component),
+            gv_sleeve_header_cell(component, show_part_numbers),
         ]
 
     if component.additional_parameters:
@@ -73,7 +73,9 @@ def gv_node_component(component: Component) -> Table:
         line_info.extend(colorbar_cells(component.color))
 
     line_image, line_image_caption = image_and_caption_cells(component)
-    line_additional_component_table = gv_additional_component_table(component)
+    line_additional_component_table = gv_additional_component_table(
+        component, show_part_numbers
+    )
     line_notes = [Td(html_line_breaks(component.notes), balign="left")]
 
     if isinstance(component, Connector):
@@ -82,7 +84,7 @@ def gv_node_component(component: Component) -> Table:
         else:
             line_ports = None
     elif isinstance(component, Cable):
-        line_ports = gv_conductor_table(component)
+        line_ports = gv_conductor_table(component, show_part_numbers)
 
     lines = [
         line_name,
@@ -109,7 +111,7 @@ def gv_node_component(component: Component) -> Table:
     return tbl
 
 
-def gv_additional_component_table(component):
+def gv_additional_component_table(component, show_part_numbers: bool = True):
     if not component.additional_components:
         return None
 
@@ -140,7 +142,7 @@ def gv_additional_component_table(component):
         ]
         rows.append(Tr(firstline))
 
-        if subitem.has_pn_info:
+        if subitem.has_pn_info and show_part_numbers:
             pn_list = partnumbers2list(subitem.partnumbers)
             secondline = [
                 Td("", colspan=3),
@@ -311,7 +313,9 @@ def gv_connector_loops(connector: Connector) -> List:
     return loop_edges
 
 
-def gv_sleeve_header_cell(component) -> Optional[Td]:
+def gv_sleeve_header_cell(
+    component, show_part_numbers: bool = True
+) -> Optional[Td]:
     """Header indicator for a sleeved bundle: a sleeve-color chip + "Braid [len]"."""
     if not component.sleeve_color:
         return None
@@ -331,7 +335,7 @@ def gv_sleeve_header_cell(component) -> Optional[Td]:
 
     # show the sleeve's part number / manufacturer in the box, like a cable jacket
     sleeve = getattr(component, "sleeve", None)
-    if sleeve is not None and sleeve.has_pn_info:
+    if sleeve is not None and sleeve.has_pn_info and show_part_numbers:
         pn_cells = partnumbers2list(sleeve.partnumbers)
         if pn_cells:
             pn_str = ", ".join(pn for pn in pn_cells if pn)
@@ -380,7 +384,7 @@ def gv_sleeve_braid_band(
     return Table(band_rows, border=0, cellborder=0, cellspacing=0, cellpadding=0)
 
 
-def gv_conductor_table(cable) -> Table:
+def gv_conductor_table(cable, show_part_numbers: bool = True) -> Table:
     rows = []
     # a colored sleeve is drawn as a woven braid band across the top and bottom
     # of the conductor bundle, with thin colored side rails around the table
@@ -442,7 +446,7 @@ def gv_conductor_table(cable) -> Table:
         rows.append(Tr(gv_wire_cell(wire, len(cells_above))))
 
         # row below the wire
-        if wire.partnumbers:
+        if wire.partnumbers and show_part_numbers:
             cells_below = partnumbers2list(
                 wire.partnumbers, parent_partnumbers=cable.partnumbers
             )

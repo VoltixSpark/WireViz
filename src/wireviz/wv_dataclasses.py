@@ -85,6 +85,12 @@ class Options:
     bgcolor_bundle: SingleColor = None
     color_output_mode: ColorOutputMode = ColorOutputMode.EN_UPPER
     mini_bom_mode: bool = True
+    # When False (the default), part-number text (P/N, MPN, manufacturer, SPN)
+    # is suppressed inside the diagram boxes for connectors, cables, wires,
+    # sleeves, and crimp/ferrule sub-items, leaving the production-relevant
+    # fields (color, gauge, length, pinout). Full part-number detail still
+    # appears in the BOM. Set True to restore the full in-box part numbers.
+    show_part_numbers: bool = False
     template_separator: str = "."
     _pad: int = 0
     # TODO: resolve template and image paths during rendering, not during YAML parsing
