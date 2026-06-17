@@ -25,7 +25,11 @@ from wireviz.wv_html import Img, Table, Td, Tr
 from wireviz.wv_utils import html_line_breaks, remove_links
 
 
-def gv_node_component(component: Component, show_part_numbers: bool = True) -> Table:
+def gv_node_component(
+    component: Component,
+    show_part_numbers: bool = True,
+    show_bom_references: bool = True,
+) -> Table:
     # If no wires connected (except maybe loop wires)?
     if isinstance(component, Connector):
         if not (component.ports_left or component.ports_right):
@@ -46,7 +50,7 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
 
     if isinstance(component, Connector):
         line_info = [
-            bom_bubble(component.bom_id),
+            bom_bubble(component.bom_id) if show_bom_references else None,
             html_line_breaks(component.type),
             html_line_breaks(component.subtype),
             f"{component.pincount}-pin" if component.show_pincount else None,
@@ -54,7 +58,9 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
         ]
     elif isinstance(component, Cable):
         line_info = [
-            bom_bubble(component.bom_id) if component.category != "bundle" else None,
+            bom_bubble(component.bom_id)
+            if (show_bom_references and component.category != "bundle")
+            else None,
             html_line_breaks(component.type),
             f"{component.wirecount}x" if component.show_wirecount else None,
             component.gauge_str_with_equiv,
@@ -74,7 +80,7 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
 
     line_image, line_image_caption = image_and_caption_cells(component)
     line_additional_component_table = gv_additional_component_table(
-        component, show_part_numbers
+        component, show_part_numbers, show_bom_references
     )
     line_notes = [Td(html_line_breaks(component.notes), balign="left")]
 
@@ -84,7 +90,9 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
         else:
             line_ports = None
     elif isinstance(component, Cable):
-        line_ports = gv_conductor_table(component, show_part_numbers)
+        line_ports = gv_conductor_table(
+            component, show_part_numbers, show_bom_references
+        )
 
     lines = [
         line_name,
@@ -111,7 +119,9 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
     return tbl
 
 
-def gv_additional_component_table(component, show_part_numbers: bool = True):
+def gv_additional_component_table(
+    component, show_part_numbers: bool = True, show_bom_references: bool = True
+):
     if not component.additional_components:
         return None
 
@@ -134,7 +144,7 @@ def gv_additional_component_table(component, show_part_numbers: bool = True):
             text_desc = subitem.description
 
         firstline = [
-            Td(bom_bubble(subitem.bom_id)),
+            Td(bom_bubble(subitem.bom_id) if show_bom_references else None),
             Td(text_qty, align="right"),
             Td(unit_qty, align="left"),
             Td(text_desc, align="left"),
@@ -180,31 +190,32 @@ def calculate_node_bgcolor(component, harness_options):
         return harness_options.bgcolor_cable.html
 
 
-def bom_bubble(id) -> Table:
+def bom_bubble(id) -> Optional[Table]:
+    """A small rounded badge showing a component's BOM line number (its `#` in
+    the BOM table), so the diagram box can be cross-referenced to the BOM.
+
+    Returns None when the component has no BOM id (e.g. ignored in BOM)."""
     if id is None:
         return None
-    else:
-        # TODO: activate BOM bubbles
-        return None
-        # size and style of BOM bubble is optimized to be a rounded square,
-        # big enough to hold any two-digit ID without GraphViz warnings
-        text = id
-        # text = f'<FONT COLOR="#FFFFFF">{id}</FONT>'
-        return Table(
-            Tr(
-                Td(
-                    text,
-                    border=1,
-                    cellpadding=0,
-                    fixedsize="true",
-                    style="rounded",
-                    height=20,
-                    width=20,
-                    # bgcolor="#000000",
-                )
-            ),
-            border=0,
-        )
+    # GraphViz HTML-like labels only honor STYLE="ROUNDED" on a <table>, not a
+    # <td>; the rounded outline and border therefore live on the Table. The
+    # cell is sized to hold a two-digit number without GraphViz size warnings.
+    return Table(
+        Tr(
+            Td(
+                str(id),
+                cellpadding=1,
+                fixedsize="true",
+                height=18,
+                width=18,
+                align="center",
+            )
+        ),
+        border=1,
+        cellborder=0,
+        cellspacing=0,
+        style="rounded",
+    )
 
 
 def make_list_of_cells(inp) -> List[Td]:
@@ -384,7 +395,9 @@ def gv_sleeve_braid_band(
     return Table(band_rows, border=0, cellborder=0, cellspacing=0, cellpadding=0)
 
 
-def gv_conductor_table(cable, show_part_numbers: bool = True) -> Table:
+def gv_conductor_table(
+    cable, show_part_numbers: bool = True, show_bom_references: bool = True
+) -> Table:
     rows = []
     # a colored sleeve is drawn as a woven braid band across the top and bottom
     # of the conductor bundle, with thin colored side rails around the table
@@ -434,7 +447,9 @@ def gv_conductor_table(cable, show_part_numbers: bool = True) -> Table:
         cells_above = [
             Td(" " + ", ".join(ins), align="left"),
             Td(" "),  # increase cell spacing here
-            Td(bom_bubble(wire.bom_id)) if cable.category == "bundle" else None,
+            Td(bom_bubble(wire.bom_id))
+            if (show_bom_references and cable.category == "bundle")
+            else None,
             Td(":".join([wi for wi in wireinfo if wi is not None and wi != ""])),
             Td(" "),  # increase cell spacing here
             Td(", ".join(outs) + " ", align="right"),

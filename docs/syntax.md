@@ -436,10 +436,15 @@ See [HTML Output Templates](../src/wireviz/templates/) for how metadata entries 
   # Fontname to use in diagram and HTML output
   fontname: <str>              # Default = 'arial'
 
-  # If True, show only a BOM entry reference together with basic info
-  # about additional components inside the diagram node (connector/cable box).
-  # If False, show all info about additional components inside the diagram node.
+  # Deprecated / no-op: kept only so older files that set it do not error.
+  # Superseded by show_bom_references.
   mini_bom_mode: <bool>        # Default = True
+
+  # If True (the default), each diagram box shows a small rounded badge with
+  # that item's BOM line number (its '#' in the BOM table), so a connector /
+  # cable / wire / crimp box can be cross-referenced to the BOM. Set False to
+  # hide the badges.
+  show_bom_references: <bool>  # Default = True
 
   # If False (the default), suppress part-number text (P/N, MPN, manufacturer,
   # SPN) inside the diagram boxes for connectors, cables, wires, sleeves, and

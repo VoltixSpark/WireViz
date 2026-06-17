@@ -84,7 +84,14 @@ class Options:
     bgcolor_cable: SingleColor = None
     bgcolor_bundle: SingleColor = None
     color_output_mode: ColorOutputMode = ColorOutputMode.EN_UPPER
+    # Deprecated / no-op: kept only so existing YAMLs that still set it do not
+    # raise. Superseded by show_bom_references below.
     mini_bom_mode: bool = True
+    # When True (the default), each diagram box shows a small rounded badge with
+    # that item's BOM line number (its `#` in the BOM table), so a connector /
+    # cable / wire / crimp box can be cross-referenced to the BOM. Set False to
+    # hide the badges.
+    show_bom_references: bool = True
     # When False (the default), part-number text (P/N, MPN, manufacturer, SPN)
     # is suppressed inside the diagram boxes for connectors, cables, wires,
     # sleeves, and crimp/ferrule sub-items, leaving the production-relevant
