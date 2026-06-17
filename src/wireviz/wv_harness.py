@@ -429,6 +429,7 @@ class Harness:
                 connector,
                 self.options.show_part_numbers,
                 self.options.show_bom_references,
+                self.options.show_connection_labels,
             )
             gv_html.update_attribs(
                 bgcolor=calculate_node_bgcolor(connector, self.options)
@@ -466,6 +467,7 @@ class Harness:
                 cable,
                 self.options.show_part_numbers,
                 self.options.show_bom_references,
+                self.options.show_connection_labels,
             )
             gv_html.update_attribs(bgcolor=calculate_node_bgcolor(cable, self.options))
             style = "filled,dashed" if cable.category == "bundle" else "filled"

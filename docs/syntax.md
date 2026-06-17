@@ -446,6 +446,11 @@ See [HTML Output Templates](../src/wireviz/templates/) for how metadata entries 
   # hide the badges.
   show_bom_references: <bool>  # Default = True
 
+  # If False (the default), the per-wire connection-endpoint labels (e.g.
+  # "C2:1:GND") are hidden inside cable boxes; the same from/to information is
+  # already in the wire schedule. Set True to show them in the diagram.
+  show_connection_labels: <bool>  # Default = False
+
   # If False (the default), suppress part-number text (P/N, MPN, manufacturer,
   # SPN) inside the diagram boxes for connectors, cables, wires, sleeves, and
   # crimp/ferrule sub-items, leaving the production-relevant fields (color,

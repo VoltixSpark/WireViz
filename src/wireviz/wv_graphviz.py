@@ -29,6 +29,7 @@ def gv_node_component(
     component: Component,
     show_part_numbers: bool = True,
     show_bom_references: bool = True,
+    show_connection_labels: bool = True,
 ) -> Table:
     # If no wires connected (except maybe loop wires)?
     if isinstance(component, Connector):
@@ -91,7 +92,10 @@ def gv_node_component(
             line_ports = None
     elif isinstance(component, Cable):
         line_ports = gv_conductor_table(
-            component, show_part_numbers, show_bom_references
+            component,
+            show_part_numbers,
+            show_bom_references,
+            show_connection_labels,
         )
 
     lines = [
@@ -396,7 +400,10 @@ def gv_sleeve_braid_band(
 
 
 def gv_conductor_table(
-    cable, show_part_numbers: bool = True, show_bom_references: bool = True
+    cable,
+    show_part_numbers: bool = True,
+    show_bom_references: bool = True,
+    show_connection_labels: bool = True,
 ) -> Table:
     rows = []
     # a colored sleeve is drawn as a woven braid band across the top and bottom
@@ -405,7 +412,14 @@ def gv_conductor_table(
     # a solid jacket is drawn as a thick frame around the conductor block
     # (no woven bands) so it reads as a continuous outer jacket, not a braid.
     jacket_hex = cable.jacket.html if getattr(cable, "jacket", None) else None
-    sleeve_colspan = 6 if cable.category == "bundle" else 5
+    # Each wire-info row has fixed cells: in-endpoint, spacer, [BOM bubble for
+    # bundles], label, segment length, total, spacer, out-endpoint. The sleeve
+    # and jacket bands must span all of them, so derive the colspan from that
+    # cell count rather than hard-coding it (adding/removing a wire-row column
+    # without updating this would shrink the band).
+    has_bubble_col = show_bom_references and cable.category == "bundle"
+    wire_colspan = 8 if has_bubble_col else 7
+    sleeve_colspan = wire_colspan
     rows.append(Tr(Td("&nbsp;")))  # spacer row on top
     if sleeve_hex:
         rows.append(Tr(Td(gv_sleeve_braid_band(sleeve_hex), colspan=sleeve_colspan)))
@@ -423,10 +437,15 @@ def gv_conductor_table(
         # colored bar drawn below already conveys it (and the color still
         # appears in the wire schedule and the BOM), so repeating it as text
         # only adds clutter.
+        # wire number (shown for non-bundles) plus the wire label, de-duplicated:
+        # when the label is just the wire number (e.g. numeric wirelabels), show
+        # it once rather than as "1 1".
+        label_parts = []
         if cable.show_wirenumbers and not isinstance(wire, ShieldClass):
-            label_text = " ".join(s for s in [str(wire.id), wire.label] if s)
-        else:
-            label_text = wire.label or ""
+            label_parts.append(str(wire.id))
+        if wire.label is not None and str(wire.label) != str(wire.id):
+            label_parts.append(str(wire.label))
+        label_text = " ".join(label_parts)
 
         if getattr(cable, "length_list", None) and not isinstance(wire, ShieldClass):
             # per-wire lengths differ; show each wire's own cut length
@@ -453,9 +472,16 @@ def gv_conductor_table(
                 if conn.to is not None:
                     outs.append(str(conn.to))
 
+        # the connection-endpoint labels (e.g. "C2:1:GND") duplicate the wire
+        # schedule's From/To columns and often clutter the box; blank the text
+        # when hidden, but keep the side cells so the column grid (and the
+        # sleeve/jacket band colspan above) stays consistent.
+        ins_text = ", ".join(ins) if show_connection_labels else ""
+        outs_text = ", ".join(outs) if show_connection_labels else ""
+
         # fixed slots (space-filled when empty) keep the columns aligned
         cells_above = [
-            Td(" " + ", ".join(ins), align="left"),
+            Td(" " + ins_text, align="left"),
             Td(" "),  # increase cell spacing here
             Td(bom_bubble(wire.bom_id))
             if (show_bom_references and cable.category == "bundle")
@@ -464,7 +490,7 @@ def gv_conductor_table(
             Td(seg_text or " ", align="right"),
             Td(total_text or " ", align="right"),
             Td(" "),  # increase cell spacing here
-            Td(", ".join(outs) + " ", align="right"),
+            Td(outs_text + " ", align="right"),
         ]
         cells_above = [cell for cell in cells_above if cell is not None]
         rows.append(Tr(cells_above))
