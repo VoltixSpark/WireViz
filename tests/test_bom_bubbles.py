@@ -50,13 +50,19 @@ def test_bom_bubble_renders_number_with_rounded_table():
     tbl = bom_bubble(3)
     assert tbl is not None
     s = str(tbl)
-    assert "3" in s
+    assert "#3" in s  # "#"-prefixed to mirror the BOM "#" column
     assert ROUNDED_MARKER in s  # rounded outline on the table, not the td
     assert "<td" in s and ROUNDED_MARKER not in s.split("<td", 1)[1]
 
 
 def test_bom_bubble_none_for_missing_id():
     assert bom_bubble(None) is None
+
+
+def test_bom_bubble_border_pinned_black():
+    # The badge sets an explicit black color so it never inherits the enclosing
+    # table's pen color (e.g. a colored sleeve/jacket would otherwise tint it).
+    assert 'color="#000000"' in str(bom_bubble(7))
 
 
 def test_references_shown_by_default(tmp_path):

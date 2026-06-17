@@ -202,22 +202,28 @@ def bom_bubble(id) -> Optional[Table]:
     if id is None:
         return None
     # GraphViz HTML-like labels only honor STYLE="ROUNDED" on a <table>, not a
-    # <td>; the rounded outline and border therefore live on the Table. The
-    # cell is sized to hold a two-digit number without GraphViz size warnings.
+    # <td>; the rounded outline and border therefore live on the Table.
+    # color is pinned black: without it the badge border inherits the enclosing
+    # table's pen color (e.g. a blue sleeve/jacket), so bubbles would tint to
+    # match the bundle instead of staying a neutral reference marker.
+    #
+    # The number is prefixed with "#" to mirror the BOM table's "#" column, so
+    # the badge reads as a parts-list find-number (the circled-callout / balloon
+    # convention from assembly drawings) rather than an ambiguous count. A short
+    # 1-digit id lands roughly circular; longer ids stretch into a pill -- the
+    # corner radius is a fixed GraphViz value, not proportional to the cell.
     return Table(
         Tr(
             Td(
-                str(id),
-                cellpadding=1,
-                fixedsize="true",
-                height=18,
-                width=18,
+                f"#{id}",
+                cellpadding=3,
                 align="center",
             )
         ),
         border=1,
         cellborder=0,
         cellspacing=0,
+        color="#000000",
         style="rounded",
     )
 
