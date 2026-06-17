@@ -134,8 +134,29 @@ def bom2tsv(inp, header=None):
     return output
 
 
+def escape_xml(inp):
+    """Escape the XML special characters &, <, > in user-supplied text so it can
+    be dropped safely into a GraphViz HTML-like label. Without this, a literal
+    `&`, `<`, or `>` in a connector/cable type, subtype, notes, or an
+    additional-component description makes GraphViz fail the whole render with
+    "not well-formed (invalid token)".
+
+    `&` is escaped first so the `&` introduced by escaping `<`/`>` is not itself
+    re-escaped (no double-escaping). Pass non-strings through unchanged.
+    """
+    if not isinstance(inp, str):
+        return inp
+    return inp.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def html_line_breaks(inp):
-    return remove_links(inp).replace("\n", "<br />") if isinstance(inp, str) else inp
+    # Escape XML specials BEFORE inserting structural <br /> tags, so the tags we
+    # add here survive while any literal &, <, > in the source text is escaped.
+    return (
+        escape_xml(remove_links(inp)).replace("\n", "<br />")
+        if isinstance(inp, str)
+        else inp
+    )
 
 
 def remove_links(inp):

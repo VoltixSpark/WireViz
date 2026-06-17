@@ -22,7 +22,7 @@ from wireviz.wv_dataclasses import (
     WireClass,
 )
 from wireviz.wv_html import Img, Table, Td, Tr
-from wireviz.wv_utils import html_line_breaks, remove_links
+from wireviz.wv_utils import escape_xml, html_line_breaks, remove_links
 
 
 def gv_node_component(
@@ -38,7 +38,7 @@ def gv_node_component(
 
     # generate all rows to be shown in the node
     if component.show_name:
-        str_name = f"{remove_links(component.designator)}"
+        str_name = escape_xml(f"{remove_links(component.designator)}")
         line_name = Td(str_name, bgcolor=component.bgcolor_title.html)
     else:
         line_name = None
@@ -147,12 +147,14 @@ def gv_additional_component_table(
                 text_qty, unit_qty = "1", "x"
             text_desc = subitem.description
 
+        # text_desc and note are user-supplied; escape XML specials so a literal
+        # &, <, or > does not break the GraphViz HTML-like label.
         firstline = [
             Td(bom_bubble(subitem.bom_id) if show_bom_references else None),
             Td(text_qty, align="right"),
             Td(unit_qty, align="left"),
-            Td(text_desc, align="left"),
-            Td(f"{subitem.note if subitem.note else ''}", align="left"),
+            Td(escape_xml(text_desc), align="left"),
+            Td(escape_xml(f"{subitem.note if subitem.note else ''}"), align="left"),
         ]
         rows.append(Tr(firstline))
 
@@ -307,12 +309,14 @@ def gv_pin_table(component) -> Table:
 def gv_pin_row(pin, connector) -> Tr:
     # ports in GraphViz are 1-indexed for more natural maping to pin/wire numbers
     has_pincolors = any([_pin.color for _pin in connector.pin_objects.values()])
+    # pin.id and pin.label are user-supplied; escape XML specials so a literal
+    # &, <, or > does not break the GraphViz HTML-like label.
     cells = [
-        Td(pin.id, port=f"p{pin.index+1}l") if connector.ports_left else None,
-        Td(pin.label, delete_if_empty=True),
+        Td(escape_xml(pin.id), port=f"p{pin.index+1}l") if connector.ports_left else None,
+        Td(escape_xml(pin.label), delete_if_empty=True),
         Td(str(pin.color) if pin.color else "", sides="TBL") if has_pincolors else None,
         Td(color_minitable(pin.color), sides="TBR") if has_pincolors else None,
-        Td(pin.id, port=f"p{pin.index+1}r") if connector.ports_right else None,
+        Td(escape_xml(pin.id), port=f"p{pin.index+1}r") if connector.ports_right else None,
     ]
     return Tr(cells)
 
