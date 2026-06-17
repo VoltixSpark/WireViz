@@ -427,17 +427,6 @@ See [HTML Output Templates](../src/wireviz/templates/) for how metadata entries 
   bgcolor_cable: <color>       # Default = bgcolor_node
   bgcolor_bundle: <color>      # Default = bgcolor_cable
 
-  # How to display colors as text in the diagram
-  # 'full' : Lowercase full color name
-  # 'FULL' : Uppercase full color name
-  # 'hex'  : Lowercase hexadecimal values
-  # 'HEX'  : Uppercase hexadecimal values
-  # 'short': Lowercase short color name
-  # 'SHORT': Uppercase short color name
-  # 'ger'  : Lowercase short German color name
-  # 'GER'  : Uppercase short German color name
-  color_mode: <str>            # Default = 'SHORT'
-
   # Fontname to use in diagram and HTML output
   fontname: <str>              # Default = 'arial'
 
