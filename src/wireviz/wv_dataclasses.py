@@ -653,6 +653,11 @@ class Cable(TopLevelGraphicalComponent):
     def gauge_str(self):
         if not self.gauge:
             return None
+        if getattr(self, "gauge_list", None):
+            numbers = [g.number for g in self.gauge_list]
+            if min(numbers) != max(numbers):
+                rng = f"{min(numbers)} .. {max(numbers)} {self.gauge.unit}"
+                return rng.replace("mm2", "mm\u00b2")
         actual_gauge = f"{self.gauge.number} {self.gauge.unit}"
         actual_gauge = actual_gauge.replace("mm2", "mm\u00b2")
         return actual_gauge
@@ -784,11 +789,18 @@ class Cable(TopLevelGraphicalComponent):
         if isinstance(self.image, dict):
             self.image = Image(**self.image)
 
-        # TODO:
-        # allow gauge, length, and other fields to be lists too (like part numbers),
-        # and assign them the same way to bundles.
-
-        self.gauge = parse_number_and_unit(self.gauge, "mm2")
+        # gauge and length may each be given as a list (per-wire, bundles only),
+        # assigned the same way as per-wire part numbers.
+        if isinstance(self.gauge, list):
+            self.gauge_list = [parse_number_and_unit(g, "mm2") for g in self.gauge]
+            units = set(g.unit for g in self.gauge_list)
+            if len(units) > 1:
+                raise Exception("all wire gauges must use the same unit")
+            # representative gauge for the bundle header / BOM
+            self.gauge = max(self.gauge_list, key=lambda g: g.number)
+        else:
+            self.gauge_list = None
+            self.gauge = parse_number_and_unit(self.gauge, "mm2")
         if isinstance(self.length, list):
             # per-wire lengths (bundles only; validated below once wirecount is known)
             self.length_list = [parse_number_and_unit(l, "m") for l in self.length]
@@ -850,6 +862,13 @@ class Cable(TopLevelGraphicalComponent):
             if len(self.length_list) != self.wirecount:
                 raise Exception("lists of lengths must match wirecount")
 
+        # if a list of gauges is provided, same constraints as lengths.
+        if self.gauge_list is not None:
+            if self.category != "bundle":
+                raise Exception("lists of gauges are only supported for bundles")
+            if len(self.gauge_list) != self.wirecount:
+                raise Exception("lists of gauges must match wirecount")
+
         # all checks have passed
         wire_tuples = zip_longest(
             # TODO: self.wire_ids
@@ -868,7 +887,9 @@ class Cable(TopLevelGraphicalComponent):
                 # inheritable from parent cable
                 type=self.type,
                 subtype=self.subtype,
-                gauge=self.gauge,
+                gauge=(
+                    self.gauge_list[wire_index] if self.gauge_list else self.gauge
+                ),
                 length=(
                     self.length_list[wire_index] if self.length_list else self.length
                 ),

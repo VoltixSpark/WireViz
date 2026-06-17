@@ -413,12 +413,12 @@ def gv_conductor_table(
     # (no woven bands) so it reads as a continuous outer jacket, not a braid.
     jacket_hex = cable.jacket.html if getattr(cable, "jacket", None) else None
     # Each wire-info row has fixed cells: in-endpoint, spacer, [BOM bubble for
-    # bundles], label, segment length, total, spacer, out-endpoint. The sleeve
-    # and jacket bands must span all of them, so derive the colspan from that
-    # cell count rather than hard-coding it (adding/removing a wire-row column
-    # without updating this would shrink the band).
+    # bundles], label, gauge, segment length, total, spacer, out-endpoint. The
+    # sleeve and jacket bands must span all of them, so derive the colspan from
+    # that cell count rather than hard-coding it (adding/removing a wire-row
+    # column without updating this would shrink the band).
     has_bubble_col = show_bom_references and cable.category == "bundle"
-    wire_colspan = 8 if has_bubble_col else 7
+    wire_colspan = 9 if has_bubble_col else 8
     sleeve_colspan = wire_colspan
     rows.append(Tr(Td("&nbsp;")))  # spacer row on top
     if sleeve_hex:
@@ -446,6 +446,15 @@ def gv_conductor_table(
         if wire.label is not None and str(wire.label) != str(wire.id):
             label_parts.append(str(wire.label))
         label_text = " ".join(label_parts)
+
+        if getattr(cable, "gauge_list", None) and not isinstance(wire, ShieldClass):
+            # per-wire gauges differ; show each wire's own gauge (the bundle
+            # header shows only the range). Uniform gauge stays header-only.
+            gauge_text = f"{wire.gauge.number} {wire.gauge.unit}".replace(
+                "mm2", "mm²"
+            )
+        else:
+            gauge_text = ""
 
         if getattr(cable, "length_list", None) and not isinstance(wire, ShieldClass):
             # per-wire lengths differ; show each wire's own cut length
@@ -487,6 +496,7 @@ def gv_conductor_table(
             if (show_bom_references and cable.category == "bundle")
             else None,
             Td(label_text or " ", align="left"),
+            Td(gauge_text or " ", align="right"),
             Td(seg_text or " ", align="right"),
             Td(total_text or " ", align="right"),
             Td(" "),  # increase cell spacing here

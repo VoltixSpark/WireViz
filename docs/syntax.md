@@ -111,6 +111,11 @@ tweak:  # optional tweaking of .gv output
                           # <int/float>      is assumed to be mm2
                           # <str>            custom units and formats are allowed
                           #                  but unavailable for auto-conversion
+                          # For bundles, a list of gauges may be specified
+                          # (one per wire, in the same unit), e.g.
+                          # gauge: [22 AWG, 24 AWG]. When wires differ, the
+                          # header shows the range and each wire shows its own
+                          # gauge; a uniform gauge is shown only in the header.
   show_equiv: <bool>      # defaults to false; can auto-convert between mm2 and AWG
                           # and display the result when set to true
   length: <int/float>[ <unit>]  # <int/float> is assumed to be in meters unless <unit> is specified

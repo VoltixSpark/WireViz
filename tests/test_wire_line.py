@@ -86,5 +86,39 @@ def test_sleeve_band_spans_full_wire_row(tmp_path):
         """,
     )
     colspans = set(re.findall(r'colspan="(\d+)"', gv))
-    assert "8" in colspans, "band/wire-bar should span all 8 columns"
+    assert "9" in colspans, "band/wire-bar should span all 9 columns"
     assert "6" not in colspans, "stale hard-coded colspan=6 must be gone"
+
+
+def test_uniform_gauge_header_only(tmp_path):
+    # scalar gauge: shown in the bundle header, not repeated per wire
+    gv = _gv(
+        tmp_path,
+        """
+        connectors: {A: {pincount: 2}, B: {pincount: 2}}
+        cables:
+          B1: {category: bundle, colors: [RD, BK], wirelabels: [W1, W2], gauge: 22 AWG, length: 5 in}
+        connections: [[{A: [1,2]}, {B1: [1,2]}, {B: [1,2]}]]
+        """,
+    )
+    assert gv.count("22 AWG") == 1, "uniform gauge should appear once (header only)"
+
+
+def test_per_wire_gauge_shown_when_differs(tmp_path):
+    # list gauge: header shows the range, each wire shows its own gauge
+    gv = _gv(
+        tmp_path,
+        """
+        connectors: {A: {pincount: 2}, B: {pincount: 2}}
+        cables:
+          B1:
+            category: bundle
+            colors: [RD, BK]
+            wirelabels: [W1, W2]
+            gauge: [22 AWG, 24 AWG]
+            length: 5 in
+        connections: [[{A: [1,2]}, {B1: [1,2]}, {B: [1,2]}]]
+        """,
+    )
+    assert "22 .. 24 AWG" in gv, "header should show the gauge range"
+    assert ">22 AWG<" in gv and ">24 AWG<" in gv, "each wire should show its own gauge"
