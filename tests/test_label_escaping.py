@@ -53,7 +53,19 @@ def _render(tmp_path, fmts, name="t"):
 def test_escape_xml_amp_first_no_double_escape():
     # & must be escaped first so the & we introduce for < / > is not re-escaped.
     assert escape_xml("a & b < c > d") == "a &amp; b &lt; c &gt; d"
-    assert escape_xml("&lt;") == "&amp;lt;"  # a literal "&lt;" stays literal
+
+
+def test_escape_xml_is_idempotent_for_existing_entities():
+    # Text pre-escaped to dodge the old crash must not be double-escaped.
+    assert escape_xml("gold cup &amp; flat spade") == "gold cup &amp; flat spade"
+    assert escape_xml("&lt;") == "&lt;"  # already a valid entity, left alone
+    assert escape_xml("&gt;") == "&gt;"
+    assert escape_xml("deg &#176; C") == "deg &#176; C"  # numeric entity preserved
+    # running escape twice yields the same result as running it once
+    once = escape_xml("a & b &amp; c < d")
+    assert escape_xml(once) == once
+    # a bare & that is not part of an entity is still escaped
+    assert escape_xml("Q&A") == "Q&amp;A"
 
 
 def test_escape_xml_passes_non_strings_through():

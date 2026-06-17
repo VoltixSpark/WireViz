@@ -52,7 +52,7 @@ def gv_node_component(
     # extra horizontal cellpadding on the type/subtype info cells: a small safety
     # margin so any residual font-metric drift in a viewer never pushes a
     # trailing glyph (")", "p") across the cell border. Conservative on purpose.
-    _INFO_PAD = 5
+    _INFO_PAD = 7
     if isinstance(component, Connector):
         line_info = [
             bom_bubble(component.bom_id) if show_bom_references else None,
@@ -183,7 +183,7 @@ def gv_additional_component_table(
     # cellpadding 5 (was 3): small horizontal safety margin so a long
     # description never has a trailing glyph cross the cell border under a
     # viewer's font-metric drift. Matches the info-row _INFO_PAD bump.
-    return Table(rows, border=1, cellborder=0, cellpadding=5, cellspacing=0)
+    return Table(rows, border=1, cellborder=0, cellpadding=7, cellspacing=0)
 
 
 def calculate_node_bgcolor(component, harness_options):

@@ -141,12 +141,18 @@ def escape_xml(inp):
     additional-component description makes GraphViz fail the whole render with
     "not well-formed (invalid token)".
 
-    `&` is escaped first so the `&` introduced by escaping `<`/`>` is not itself
-    re-escaped (no double-escaping). Pass non-strings through unchanged.
+    Idempotent: a `&` that already begins a valid entity (e.g. `&amp;`, `&lt;`,
+    `&#176;`) is left alone, so text pre-escaped to work around the old crash is
+    not double-escaped into a literal `&amp;`. Only a bare `&` becomes `&amp;`;
+    doing `&` before `<`/`>` means the `&` introduced by those is not re-escaped.
+    Pass non-strings through unchanged.
     """
     if not isinstance(inp, str):
         return inp
-    return inp.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    inp = re.sub(
+        r"&(?!(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9A-Fa-f]+);)", "&amp;", inp
+    )
+    return inp.replace("<", "&lt;").replace(">", "&gt;")
 
 
 def html_line_breaks(inp):
