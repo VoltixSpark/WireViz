@@ -111,6 +111,11 @@ tweak:  # optional tweaking of .gv output
                           # <int/float>      is assumed to be mm2
                           # <str>            custom units and formats are allowed
                           #                  but unavailable for auto-conversion
+                          # For bundles, a list of gauges may be specified
+                          # (one per wire, in the same unit), e.g.
+                          # gauge: [22 AWG, 24 AWG]. When wires differ, the
+                          # header shows the range and each wire shows its own
+                          # gauge; a uniform gauge is shown only in the header.
   show_equiv: <bool>      # defaults to false; can auto-convert between mm2 and AWG
                           # and display the result when set to true
   length: <int/float>[ <unit>]  # <int/float> is assumed to be in meters unless <unit> is specified
@@ -422,24 +427,24 @@ See [HTML Output Templates](../src/wireviz/templates/) for how metadata entries 
   bgcolor_cable: <color>       # Default = bgcolor_node
   bgcolor_bundle: <color>      # Default = bgcolor_cable
 
-  # How to display colors as text in the diagram
-  # 'full' : Lowercase full color name
-  # 'FULL' : Uppercase full color name
-  # 'hex'  : Lowercase hexadecimal values
-  # 'HEX'  : Uppercase hexadecimal values
-  # 'short': Lowercase short color name
-  # 'SHORT': Uppercase short color name
-  # 'ger'  : Lowercase short German color name
-  # 'GER'  : Uppercase short German color name
-  color_mode: <str>            # Default = 'SHORT'
-
   # Fontname to use in diagram and HTML output
   fontname: <str>              # Default = 'arial'
 
-  # If True, show only a BOM entry reference together with basic info
-  # about additional components inside the diagram node (connector/cable box).
-  # If False, show all info about additional components inside the diagram node.
+  # Deprecated / no-op: kept only so older files that set it do not error.
+  # Superseded by show_bom_references.
   mini_bom_mode: <bool>        # Default = True
+
+  # If True (the default), each diagram box shows a small rounded badge with
+  # that item's BOM line number (its '#' in the BOM table), so a connector /
+  # cable / wire / crimp box can be cross-referenced to the BOM. Set False to
+  # hide the badges.
+  show_bom_references: <bool>  # Default = True
+
+  # Per-wire connection-endpoint labels inside cable boxes. Tri-state:
+  #   off  / false (default) : hidden (the from/to info is in the wire schedule)
+  #   pin                    : connector:pin only, e.g. "C2:1"
+  #   full / true            : connector:pin:label, e.g. "C2:1:GND"
+  show_connection_labels: <off|pin|full>  # Default = off
 
   # If False (the default), suppress part-number text (P/N, MPN, manufacturer,
   # SPN) inside the diagram boxes for connectors, cables, wires, sleeves, and

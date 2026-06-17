@@ -84,7 +84,20 @@ class Options:
     bgcolor_cable: SingleColor = None
     bgcolor_bundle: SingleColor = None
     color_output_mode: ColorOutputMode = ColorOutputMode.EN_UPPER
+    # Deprecated / no-op: kept only so existing YAMLs that still set it do not
+    # raise. Superseded by show_bom_references below.
     mini_bom_mode: bool = True
+    # When True (the default), each diagram box shows a small rounded badge with
+    # that item's BOM line number (its `#` in the BOM table), so a connector /
+    # cable / wire / crimp box can be cross-referenced to the BOM. Set False to
+    # hide the badges.
+    show_bom_references: bool = True
+    # Controls the per-wire connection-endpoint labels inside cable boxes.
+    # Tri-state (normalized in __post_init__ to "off" / "pin" / "full"):
+    #   off  / false (default) -> hidden; the from/to info is in the wire schedule
+    #   pin                     -> connector:pin only (e.g. "C2:1")
+    #   full / true             -> connector:pin:label (e.g. "C2:1:GND")
+    show_connection_labels: Union[bool, str] = False
     # When False (the default), part-number text (P/N, MPN, manufacturer, SPN)
     # is suppressed inside the diagram boxes for connectors, cables, wires,
     # sleeves, and crimp/ferrule sub-items, leaving the production-relevant
@@ -98,6 +111,26 @@ class Options:
     _image_paths: List = field(default_factory=list)
 
     def __post_init__(self):
+        # normalize the tri-state connection-label option to "off"/"pin"/"full"
+        v = self.show_connection_labels
+        if v is True:
+            self.show_connection_labels = "full"
+        elif v is False or v is None:
+            self.show_connection_labels = "off"
+        else:
+            s = str(v).strip().lower()
+            aliases = {
+                "off": "off", "none": "off", "no": "off", "false": "off",
+                "hidden": "off",
+                "pin": "pin", "pins": "pin", "mini": "pin",
+                "full": "full", "true": "full", "label": "full", "labels": "full",
+            }
+            if s not in aliases:
+                raise Exception(
+                    f"invalid show_connection_labels: {v!r} (use off/pin/full)"
+                )
+            self.show_connection_labels = aliases[s]
+
         self.bgcolor = SingleColor(self.bgcolor)
         self.bgcolor_node = SingleColor(self.bgcolor_node)
         self.bgcolor_connector = SingleColor(self.bgcolor_connector)
@@ -642,6 +675,11 @@ class Cable(TopLevelGraphicalComponent):
     def gauge_str(self):
         if not self.gauge:
             return None
+        if getattr(self, "gauge_list", None):
+            numbers = [g.number for g in self.gauge_list]
+            if min(numbers) != max(numbers):
+                rng = f"{min(numbers)} .. {max(numbers)} {self.gauge.unit}"
+                return rng.replace("mm2", "mm\u00b2")
         actual_gauge = f"{self.gauge.number} {self.gauge.unit}"
         actual_gauge = actual_gauge.replace("mm2", "mm\u00b2")
         return actual_gauge
@@ -773,11 +811,18 @@ class Cable(TopLevelGraphicalComponent):
         if isinstance(self.image, dict):
             self.image = Image(**self.image)
 
-        # TODO:
-        # allow gauge, length, and other fields to be lists too (like part numbers),
-        # and assign them the same way to bundles.
-
-        self.gauge = parse_number_and_unit(self.gauge, "mm2")
+        # gauge and length may each be given as a list (per-wire, bundles only),
+        # assigned the same way as per-wire part numbers.
+        if isinstance(self.gauge, list):
+            self.gauge_list = [parse_number_and_unit(g, "mm2") for g in self.gauge]
+            units = set(g.unit for g in self.gauge_list)
+            if len(units) > 1:
+                raise Exception("all wire gauges must use the same unit")
+            # representative gauge for the bundle header / BOM
+            self.gauge = max(self.gauge_list, key=lambda g: g.number)
+        else:
+            self.gauge_list = None
+            self.gauge = parse_number_and_unit(self.gauge, "mm2")
         if isinstance(self.length, list):
             # per-wire lengths (bundles only; validated below once wirecount is known)
             self.length_list = [parse_number_and_unit(l, "m") for l in self.length]
@@ -839,6 +884,13 @@ class Cable(TopLevelGraphicalComponent):
             if len(self.length_list) != self.wirecount:
                 raise Exception("lists of lengths must match wirecount")
 
+        # if a list of gauges is provided, same constraints as lengths.
+        if self.gauge_list is not None:
+            if self.category != "bundle":
+                raise Exception("lists of gauges are only supported for bundles")
+            if len(self.gauge_list) != self.wirecount:
+                raise Exception("lists of gauges must match wirecount")
+
         # all checks have passed
         wire_tuples = zip_longest(
             # TODO: self.wire_ids
@@ -857,7 +909,9 @@ class Cable(TopLevelGraphicalComponent):
                 # inheritable from parent cable
                 type=self.type,
                 subtype=self.subtype,
-                gauge=self.gauge,
+                gauge=(
+                    self.gauge_list[wire_index] if self.gauge_list else self.gauge
+                ),
                 length=(
                     self.length_list[wire_index] if self.length_list else self.length
                 ),

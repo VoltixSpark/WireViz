@@ -25,7 +25,12 @@ from wireviz.wv_html import Img, Table, Td, Tr
 from wireviz.wv_utils import html_line_breaks, remove_links
 
 
-def gv_node_component(component: Component, show_part_numbers: bool = True) -> Table:
+def gv_node_component(
+    component: Component,
+    show_part_numbers: bool = True,
+    show_bom_references: bool = True,
+    show_connection_labels: str = "full",
+) -> Table:
     # If no wires connected (except maybe loop wires)?
     if isinstance(component, Connector):
         if not (component.ports_left or component.ports_right):
@@ -46,7 +51,7 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
 
     if isinstance(component, Connector):
         line_info = [
-            bom_bubble(component.bom_id),
+            bom_bubble(component.bom_id) if show_bom_references else None,
             html_line_breaks(component.type),
             html_line_breaks(component.subtype),
             f"{component.pincount}-pin" if component.show_pincount else None,
@@ -54,7 +59,9 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
         ]
     elif isinstance(component, Cable):
         line_info = [
-            bom_bubble(component.bom_id) if component.category != "bundle" else None,
+            bom_bubble(component.bom_id)
+            if (show_bom_references and component.category != "bundle")
+            else None,
             html_line_breaks(component.type),
             f"{component.wirecount}x" if component.show_wirecount else None,
             component.gauge_str_with_equiv,
@@ -74,7 +81,7 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
 
     line_image, line_image_caption = image_and_caption_cells(component)
     line_additional_component_table = gv_additional_component_table(
-        component, show_part_numbers
+        component, show_part_numbers, show_bom_references
     )
     line_notes = [Td(html_line_breaks(component.notes), balign="left")]
 
@@ -84,7 +91,12 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
         else:
             line_ports = None
     elif isinstance(component, Cable):
-        line_ports = gv_conductor_table(component, show_part_numbers)
+        line_ports = gv_conductor_table(
+            component,
+            show_part_numbers,
+            show_bom_references,
+            show_connection_labels,
+        )
 
     lines = [
         line_name,
@@ -111,7 +123,9 @@ def gv_node_component(component: Component, show_part_numbers: bool = True) -> T
     return tbl
 
 
-def gv_additional_component_table(component, show_part_numbers: bool = True):
+def gv_additional_component_table(
+    component, show_part_numbers: bool = True, show_bom_references: bool = True
+):
     if not component.additional_components:
         return None
 
@@ -134,7 +148,7 @@ def gv_additional_component_table(component, show_part_numbers: bool = True):
             text_desc = subitem.description
 
         firstline = [
-            Td(bom_bubble(subitem.bom_id)),
+            Td(bom_bubble(subitem.bom_id) if show_bom_references else None),
             Td(text_qty, align="right"),
             Td(unit_qty, align="left"),
             Td(text_desc, align="left"),
@@ -180,31 +194,38 @@ def calculate_node_bgcolor(component, harness_options):
         return harness_options.bgcolor_cable.html
 
 
-def bom_bubble(id) -> Table:
+def bom_bubble(id) -> Optional[Table]:
+    """A small rounded badge showing a component's BOM line number (its `#` in
+    the BOM table), so the diagram box can be cross-referenced to the BOM.
+
+    Returns None when the component has no BOM id (e.g. ignored in BOM)."""
     if id is None:
         return None
-    else:
-        # TODO: activate BOM bubbles
-        return None
-        # size and style of BOM bubble is optimized to be a rounded square,
-        # big enough to hold any two-digit ID without GraphViz warnings
-        text = id
-        # text = f'<FONT COLOR="#FFFFFF">{id}</FONT>'
-        return Table(
-            Tr(
-                Td(
-                    text,
-                    border=1,
-                    cellpadding=0,
-                    fixedsize="true",
-                    style="rounded",
-                    height=20,
-                    width=20,
-                    # bgcolor="#000000",
-                )
-            ),
-            border=0,
-        )
+    # GraphViz HTML-like labels only honor STYLE="ROUNDED" on a <table>, not a
+    # <td>; the rounded outline and border therefore live on the Table.
+    # color is pinned black: without it the badge border inherits the enclosing
+    # table's pen color (e.g. a blue sleeve/jacket), so bubbles would tint to
+    # match the bundle instead of staying a neutral reference marker.
+    #
+    # The number is prefixed with "#" to mirror the BOM table's "#" column, so
+    # the badge reads as a parts-list find-number (the circled-callout / balloon
+    # convention from assembly drawings) rather than an ambiguous count. A short
+    # 1-digit id lands roughly circular; longer ids stretch into a pill -- the
+    # corner radius is a fixed GraphViz value, not proportional to the cell.
+    return Table(
+        Tr(
+            Td(
+                f"#{id}",
+                cellpadding=3,
+                align="center",
+            )
+        ),
+        border=1,
+        cellborder=0,
+        cellspacing=0,
+        color="#000000",
+        style="rounded",
+    )
 
 
 def make_list_of_cells(inp) -> List[Td]:
@@ -384,7 +405,12 @@ def gv_sleeve_braid_band(
     return Table(band_rows, border=0, cellborder=0, cellspacing=0, cellpadding=0)
 
 
-def gv_conductor_table(cable, show_part_numbers: bool = True) -> Table:
+def gv_conductor_table(
+    cable,
+    show_part_numbers: bool = True,
+    show_bom_references: bool = True,
+    show_connection_labels: str = "full",
+) -> Table:
     rows = []
     # a colored sleeve is drawn as a woven braid band across the top and bottom
     # of the conductor bundle, with thin colored side rails around the table
@@ -392,7 +418,14 @@ def gv_conductor_table(cable, show_part_numbers: bool = True) -> Table:
     # a solid jacket is drawn as a thick frame around the conductor block
     # (no woven bands) so it reads as a continuous outer jacket, not a braid.
     jacket_hex = cable.jacket.html if getattr(cable, "jacket", None) else None
-    sleeve_colspan = 6 if cable.category == "bundle" else 5
+    # Each wire-info row has fixed cells: in-endpoint, spacer, [BOM bubble for
+    # bundles], label, gauge, segment length, total, spacer, out-endpoint. The
+    # sleeve and jacket bands must span all of them, so derive the colspan from
+    # that cell count rather than hard-coding it (adding/removing a wire-row
+    # column without updating this would shrink the band).
+    has_bubble_col = show_bom_references and cable.category == "bundle"
+    wire_colspan = 9 if has_bubble_col else 8
+    sleeve_colspan = wire_colspan
     rows.append(Tr(Td("&nbsp;")))  # spacer row on top
     if sleeve_hex:
         rows.append(Tr(Td(gv_sleeve_braid_band(sleeve_hex), colspan=sleeve_colspan)))
@@ -404,40 +437,87 @@ def gv_conductor_table(cable, show_part_numbers: bool = True) -> Table:
             rows.append(Tr(Td("&nbsp;")))  # spacer row between wires and shields
             inserted_break_inbetween = True
 
-        # row above the wire
-        wireinfo = []
+        # row above the wire: wire label / per-segment length / continuation
+        # total laid out in fixed columns so the values line up vertically down
+        # the bundle. The wire color is intentionally omitted here -- the
+        # colored bar drawn below already conveys it (and the color still
+        # appears in the wire schedule and the BOM), so repeating it as text
+        # only adds clutter.
+        # wire number (shown for non-bundles) plus the wire label, de-duplicated:
+        # when the label is just the wire number (e.g. numeric wirelabels), show
+        # it once rather than as "1 1".
+        label_parts = []
         if cable.show_wirenumbers and not isinstance(wire, ShieldClass):
-            wireinfo.append(str(wire.id))
-        wireinfo.append(str(wire.color))
-        wireinfo.append(wire.label)
+            label_parts.append(str(wire.id))
+        if wire.label is not None and str(wire.label) != str(wire.id):
+            label_parts.append(str(wire.label))
+        label_text = " ".join(label_parts)
+
+        if getattr(cable, "gauge_list", None) and not isinstance(wire, ShieldClass):
+            # per-wire gauges differ; show each wire's own gauge (the bundle
+            # header shows only the range). Uniform gauge stays header-only.
+            gauge_text = f"{wire.gauge.number} {wire.gauge.unit}".replace(
+                "mm2", "mm²"
+            )
+        else:
+            gauge_text = ""
+
         if getattr(cable, "length_list", None) and not isinstance(wire, ShieldClass):
-            # per-wire lengths differ; show each wire's own length
-            wireinfo.append(f"{wire.length.number} {wire.length.unit}")
-        # continuation marker: same conductor spans another bundle
+            # per-wire lengths differ; show each wire's own cut length
+            seg_text = f"{wire.length.number} {wire.length.unit}"
+        else:
+            seg_text = ""
+
+        # continuation: same conductor spans another bundle; show the summed
+        # cut length on every segment so the total is visible wherever read.
         if (
             getattr(wire, "continues_to", None) is not None
             or getattr(wire, "continues_from", None) is not None
         ):
-            # same conductor spans another bundle; show the summed cut length
-            # on every segment so the total is visible wherever the wire is read
             t = wire.chain_total_length
-            wireinfo.append(f"({t.number} {t.unit} total)")
+            total_text = f"{t.number} {t.unit} total"
+        else:
+            total_text = ""
+
+        # the connection-endpoint labels (e.g. "C2:1:GND") duplicate the wire
+        # schedule's From/To columns and often clutter the box. Tri-state:
+        #   "off"  -> hidden,
+        #   "pin"  -> connector:pin only (drop the trailing :pinlabel),
+        #   "full" -> connector:pin:pinlabel.
+        # The side cells are always kept (just blank when off) so the column
+        # grid and the sleeve/jacket band colspan above stay consistent.
+        def _endpoint(pin):
+            s = str(pin)  # parent:id:label, already anonymity/simple-aware
+            if show_connection_labels == "pin" and pin.label:
+                suffix = f":{pin.label}"
+                if s.endswith(suffix):
+                    s = s[: -len(suffix)]
+            return s
 
         ins, outs = [], []
-        for conn in cable._connections:
-            if conn.via.id == wire.id:
-                if conn.from_ is not None:
-                    ins.append(str(conn.from_))
-                if conn.to is not None:
-                    outs.append(str(conn.to))
+        if show_connection_labels != "off":
+            for conn in cable._connections:
+                if conn.via.id == wire.id:
+                    if conn.from_ is not None:
+                        ins.append(_endpoint(conn.from_))
+                    if conn.to is not None:
+                        outs.append(_endpoint(conn.to))
+        ins_text = ", ".join(ins)
+        outs_text = ", ".join(outs)
 
+        # fixed slots (space-filled when empty) keep the columns aligned
         cells_above = [
-            Td(" " + ", ".join(ins), align="left"),
+            Td(" " + ins_text, align="left"),
             Td(" "),  # increase cell spacing here
-            Td(bom_bubble(wire.bom_id)) if cable.category == "bundle" else None,
-            Td(":".join([wi for wi in wireinfo if wi is not None and wi != ""])),
+            Td(bom_bubble(wire.bom_id))
+            if (show_bom_references and cable.category == "bundle")
+            else None,
+            Td(label_text or " ", align="left"),
+            Td(gauge_text or " ", align="right"),
+            Td(seg_text or " ", align="right"),
+            Td(total_text or " ", align="right"),
             Td(" "),  # increase cell spacing here
-            Td(", ".join(outs) + " ", align="right"),
+            Td(outs_text + " ", align="right"),
         ]
         cells_above = [cell for cell in cells_above if cell is not None]
         rows.append(Tr(cells_above))
