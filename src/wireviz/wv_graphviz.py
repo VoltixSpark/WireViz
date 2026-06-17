@@ -417,24 +417,33 @@ def gv_conductor_table(
             rows.append(Tr(Td("&nbsp;")))  # spacer row between wires and shields
             inserted_break_inbetween = True
 
-        # row above the wire
-        wireinfo = []
+        # row above the wire: wire label / per-segment length / continuation
+        # total laid out in fixed columns so the values line up vertically down
+        # the bundle. The wire color is intentionally omitted here -- the
+        # colored bar drawn below already conveys it (and the color still
+        # appears in the wire schedule and the BOM), so repeating it as text
+        # only adds clutter.
         if cable.show_wirenumbers and not isinstance(wire, ShieldClass):
-            wireinfo.append(str(wire.id))
-        wireinfo.append(str(wire.color))
-        wireinfo.append(wire.label)
+            label_text = " ".join(s for s in [str(wire.id), wire.label] if s)
+        else:
+            label_text = wire.label or ""
+
         if getattr(cable, "length_list", None) and not isinstance(wire, ShieldClass):
-            # per-wire lengths differ; show each wire's own length
-            wireinfo.append(f"{wire.length.number} {wire.length.unit}")
-        # continuation marker: same conductor spans another bundle
+            # per-wire lengths differ; show each wire's own cut length
+            seg_text = f"{wire.length.number} {wire.length.unit}"
+        else:
+            seg_text = ""
+
+        # continuation: same conductor spans another bundle; show the summed
+        # cut length on every segment so the total is visible wherever read.
         if (
             getattr(wire, "continues_to", None) is not None
             or getattr(wire, "continues_from", None) is not None
         ):
-            # same conductor spans another bundle; show the summed cut length
-            # on every segment so the total is visible wherever the wire is read
             t = wire.chain_total_length
-            wireinfo.append(f"({t.number} {t.unit} total)")
+            total_text = f"{t.number} {t.unit} total"
+        else:
+            total_text = ""
 
         ins, outs = [], []
         for conn in cable._connections:
@@ -444,13 +453,16 @@ def gv_conductor_table(
                 if conn.to is not None:
                     outs.append(str(conn.to))
 
+        # fixed slots (space-filled when empty) keep the columns aligned
         cells_above = [
             Td(" " + ", ".join(ins), align="left"),
             Td(" "),  # increase cell spacing here
             Td(bom_bubble(wire.bom_id))
             if (show_bom_references and cable.category == "bundle")
             else None,
-            Td(":".join([wi for wi in wireinfo if wi is not None and wi != ""])),
+            Td(label_text or " ", align="left"),
+            Td(seg_text or " ", align="right"),
+            Td(total_text or " ", align="right"),
             Td(" "),  # increase cell spacing here
             Td(", ".join(outs) + " ", align="right"),
         ]
