@@ -92,10 +92,12 @@ class Options:
     # cable / wire / crimp box can be cross-referenced to the BOM. Set False to
     # hide the badges.
     show_bom_references: bool = True
-    # When False (the default), the per-wire connection-endpoint labels (e.g.
-    # "C2:1:GND") are hidden inside cable boxes; the same from/to information is
-    # already in the wire schedule. Set True to show them in the diagram.
-    show_connection_labels: bool = False
+    # Controls the per-wire connection-endpoint labels inside cable boxes.
+    # Tri-state (normalized in __post_init__ to "off" / "pin" / "full"):
+    #   off  / false (default) -> hidden; the from/to info is in the wire schedule
+    #   pin                     -> connector:pin only (e.g. "C2:1")
+    #   full / true             -> connector:pin:label (e.g. "C2:1:GND")
+    show_connection_labels: Union[bool, str] = False
     # When False (the default), part-number text (P/N, MPN, manufacturer, SPN)
     # is suppressed inside the diagram boxes for connectors, cables, wires,
     # sleeves, and crimp/ferrule sub-items, leaving the production-relevant
@@ -109,6 +111,26 @@ class Options:
     _image_paths: List = field(default_factory=list)
 
     def __post_init__(self):
+        # normalize the tri-state connection-label option to "off"/"pin"/"full"
+        v = self.show_connection_labels
+        if v is True:
+            self.show_connection_labels = "full"
+        elif v is False or v is None:
+            self.show_connection_labels = "off"
+        else:
+            s = str(v).strip().lower()
+            aliases = {
+                "off": "off", "none": "off", "no": "off", "false": "off",
+                "hidden": "off",
+                "pin": "pin", "pins": "pin", "mini": "pin",
+                "full": "full", "true": "full", "label": "full", "labels": "full",
+            }
+            if s not in aliases:
+                raise Exception(
+                    f"invalid show_connection_labels: {v!r} (use off/pin/full)"
+                )
+            self.show_connection_labels = aliases[s]
+
         self.bgcolor = SingleColor(self.bgcolor)
         self.bgcolor_node = SingleColor(self.bgcolor_node)
         self.bgcolor_connector = SingleColor(self.bgcolor_connector)

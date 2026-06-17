@@ -60,12 +60,33 @@ def test_connection_labels_shown_when_enabled(tmp_path):
         tmp_path,
         """
         options: {show_connection_labels: true}
-        connectors: {A: {pincount: 2}, B: {pincount: 2}}
+        connectors:
+          A: {pincount: 2, pinlabels: [GND, VCC]}
+          B: {pincount: 2}
         cables: {C1: {gauge: 24 AWG, colors: [RD, BK], length: 5 in}}
         connections: [[{A: [1,2]}, {C1: [1,2]}, {B: [1,2]}]]
         """,
     )
-    assert "A:1" in gv and "B:1" in gv
+    # full mode includes the pin label
+    assert "A:1:GND" in gv
+
+
+def test_connection_labels_pin_mode_drops_label(tmp_path):
+    gv = _gv(
+        tmp_path,
+        """
+        options: {show_connection_labels: pin}
+        connectors:
+          A: {pincount: 2, pinlabels: [GND, VCC]}
+          B: {pincount: 2}
+        cables: {C1: {gauge: 24 AWG, colors: [RD, BK], length: 5 in}}
+        connections: [[{A: [1,2]}, {C1: [1,2]}, {B: [1,2]}]]
+        """,
+    )
+    # pin mode shows connector:pin but not the labeled endpoint ("A:1:GND").
+    # (The bare label "GND" still appears in connector A's pinout table, which
+    # is correct - that is the connector box, not the wire-row endpoint.)
+    assert "A:1" in gv and "A:1:GND" not in gv
 
 
 def test_sleeve_band_spans_full_wire_row(tmp_path):

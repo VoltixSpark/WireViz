@@ -29,7 +29,7 @@ def gv_node_component(
     component: Component,
     show_part_numbers: bool = True,
     show_bom_references: bool = True,
-    show_connection_labels: bool = True,
+    show_connection_labels: str = "full",
 ) -> Table:
     # If no wires connected (except maybe loop wires)?
     if isinstance(component, Connector):
@@ -403,7 +403,7 @@ def gv_conductor_table(
     cable,
     show_part_numbers: bool = True,
     show_bom_references: bool = True,
-    show_connection_labels: bool = True,
+    show_connection_labels: str = "full",
 ) -> Table:
     rows = []
     # a colored sleeve is drawn as a woven braid band across the top and bottom
@@ -473,20 +473,31 @@ def gv_conductor_table(
         else:
             total_text = ""
 
-        ins, outs = [], []
-        for conn in cable._connections:
-            if conn.via.id == wire.id:
-                if conn.from_ is not None:
-                    ins.append(str(conn.from_))
-                if conn.to is not None:
-                    outs.append(str(conn.to))
-
         # the connection-endpoint labels (e.g. "C2:1:GND") duplicate the wire
-        # schedule's From/To columns and often clutter the box; blank the text
-        # when hidden, but keep the side cells so the column grid (and the
-        # sleeve/jacket band colspan above) stays consistent.
-        ins_text = ", ".join(ins) if show_connection_labels else ""
-        outs_text = ", ".join(outs) if show_connection_labels else ""
+        # schedule's From/To columns and often clutter the box. Tri-state:
+        #   "off"  -> hidden,
+        #   "pin"  -> connector:pin only (drop the trailing :pinlabel),
+        #   "full" -> connector:pin:pinlabel.
+        # The side cells are always kept (just blank when off) so the column
+        # grid and the sleeve/jacket band colspan above stay consistent.
+        def _endpoint(pin):
+            s = str(pin)  # parent:id:label, already anonymity/simple-aware
+            if show_connection_labels == "pin" and pin.label:
+                suffix = f":{pin.label}"
+                if s.endswith(suffix):
+                    s = s[: -len(suffix)]
+            return s
+
+        ins, outs = [], []
+        if show_connection_labels != "off":
+            for conn in cable._connections:
+                if conn.via.id == wire.id:
+                    if conn.from_ is not None:
+                        ins.append(_endpoint(conn.from_))
+                    if conn.to is not None:
+                        outs.append(_endpoint(conn.to))
+        ins_text = ", ".join(ins)
+        outs_text = ", ".join(outs)
 
         # fixed slots (space-filled when empty) keep the columns aligned
         cells_above = [
