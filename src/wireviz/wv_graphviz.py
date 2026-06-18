@@ -24,6 +24,14 @@ from wireviz.wv_dataclasses import (
 from wireviz.wv_html import Img, Table, Td, Tr
 from wireviz.wv_utils import escape_xml, html_line_breaks, remove_links
 
+# Wire color-band geometry (points). Each wire is a vertical stack of cells: a
+# thin black separator, the color band(s), then a thin black separator. Making
+# the color bands taller than the separators keeps the wire color dominant
+# (~75% of the line) so similar colors stay distinguishable even in dense
+# bundles, rather than a thin color stripe sandwiched by equal-height black.
+_WIRE_BAND_H = 2    # height of each color band
+_WIRE_BORDER_H = 1  # height of the black separator above/below the color
+
 
 def gv_node_component(
     component: Component,
@@ -573,14 +581,22 @@ def gv_wire_cell(wire: Union[WireClass, ShieldClass], colspan: int) -> Td:
     else:
         color_list = ["#000000"]
 
+    # The first and last entries are the black separators (only present when the
+    # wire carries a color); render those thin so the color band(s) dominate. A
+    # shield (no color) is a single black cell kept at the band height.
+    last = len(color_list) - 1
     wire_inner_rows = []
+    total_height = 0
     for j, bgcolor in enumerate(color_list[::-1]):
+        is_border = bool(wire.color) and (j == 0 or j == last)
+        cell_height = _WIRE_BORDER_H if is_border else _WIRE_BAND_H
+        total_height += cell_height
         wire_inner_cell_attribs = {
             "bgcolor": bgcolor if bgcolor != "" else "#000000",
             "border": 0,
             "cellpadding": 0,
             "colspan": colspan,
-            "height": 2,
+            "height": cell_height,
         }
         wire_inner_rows.append(Tr(Td("", **wire_inner_cell_attribs)))
     wire_inner_table = Table(wire_inner_rows, border=0, cellborder=0, cellspacing=0)
@@ -589,7 +605,7 @@ def gv_wire_cell(wire: Union[WireClass, ShieldClass], colspan: int) -> Td:
         "cellspacing": 0,
         "cellpadding": 0,
         "colspan": colspan,
-        "height": 2 * len(color_list),
+        "height": total_height,
         "port": f"w{wire.index+1}",
     }
     # ports in GraphViz are 1-indexed for more natural maping to pin/wire numbers

@@ -448,17 +448,12 @@ class Harness:
                     dot.edge(head, tail, label=" ")
                     #                    ^ workaround to avoid oversized loops
 
-        # determine if there are double- or triple-colored wires in the harness;
-        # if so, pad single-color wires to make all wires of equal thickness
-        wire_is_multicolor = [
-            len(wire.color) > 1
-            for cable in self.cables.values()
-            for wire in cable.wire_objects.values()
-        ]
-        if any(wire_is_multicolor):
-            wireviz.wv_colors.padding_amount = 3
-        else:
-            wireviz.wv_colors.padding_amount = 1
+        # Always pad wires to the 3-band color region so every wire renders at
+        # the same, legible thickness regardless of whether the harness happens
+        # to contain a multi-color wire. A single-color wire thus shows a full
+        # color region instead of a thin 2pt stripe, keeping similar colors
+        # (orange/brown, blue/black) distinguishable in dense bundles.
+        wireviz.wv_colors.padding_amount = 3
 
         for cable in self.cables.values():
             # generate cable node
