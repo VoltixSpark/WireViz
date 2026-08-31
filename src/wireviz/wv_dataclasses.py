@@ -525,6 +525,10 @@ class WireClass:
     subtype: Union[MultilineHypertext, List[MultilineHypertext]] = None
     gauge: Optional[NumberAndUnit] = None
     length: Optional[NumberAndUnit] = None
+    # declared TOTAL cut length of the whole physical conductor (see
+    # chain_total_length). Authored once per continuation chain; the other
+    # segments then carry no `length:` at all.
+    total_length: Optional[NumberAndUnit] = None
     ignore_in_bom: Optional[bool] = False
     sum_amounts_in_bom: bool = True
     partnumbers: PartNumberInfo = None
@@ -534,29 +538,72 @@ class WireClass:
     continues_from: Optional["WireClass"] = None
 
     @property
+    def chain_declared_total(self) -> Optional[NumberAndUnit]:
+        """The `total_length:` declared anywhere in this wire's chain, if any.
+
+        Returns None for a chain using the legacy per-segment sum, which lets
+        callers keep the legacy math (which stops at segments that are distinct
+        parts) instead of the whole-chain sum.
+        """
+        node = self
+        while node.continues_from is not None:
+            node = node.continues_from
+        while node is not None:
+            if node.total_length:
+                return node.total_length
+            node = node.continues_to
+        return None
+
+    @property
     def chain_total_length(self) -> Optional[NumberAndUnit]:
-        # total cut length across all continuation segments of this conductor
-        if not self.length:
-            return None
+        """Total cut length of this physical conductor across all its segments.
+
+        Two authoring styles are supported:
+        - `total_length:` declared once anywhere in the chain -> that value IS
+          the total (the remaining segments carry no length; how much of the
+          wire sits under each covering is defined by the coverings' own
+          lengths, not by splitting the wire).
+        - no `total_length:` anywhere -> legacy behavior, sum the per-segment
+          `length:` values across the chain.
+
+        Returns None only when neither style yields a number. Note this walks
+        to the head of the chain regardless of whether *this* node carries a
+        length, so a length-free segment still reports the chain's total
+        rather than None.
+        """
         # walk to the head of the chain
         head = self
         while head.continues_from is not None:
             head = head.continues_from
+
+        # a declared total anywhere in the chain wins over the segment sum
+        declared = self.chain_declared_total
+        if declared:
+            return declared
+
         total = 0
-        unit = head.length.unit if head.length else None
+        unit = None
+        found = False
         node = head
         while node is not None:
             if node.length:
+                if unit is None:
+                    unit = node.length.unit
                 total += node.length.number
+                found = True
             node = node.continues_to
-        return NumberAndUnit(total, unit)
+        return NumberAndUnit(total, unit) if found else None
 
     @property
     def bom_hash(self) -> BomHash:
+        # a wire in a chain that declares a total carries no `length:`, so fall
+        # back to that declared total (which may sit on any segment of the
+        # chain) for the BOM unit/amount.
+        _amount = self.length or self.chain_declared_total
         if self.sum_amounts_in_bom:
             _hash = BomHash(
                 description=self.description,
-                qty_unit=self.length.unit if self.length else None,
+                qty_unit=_amount.unit if _amount else None,
                 amount=None,
                 partnumbers=self.partnumbers,
             )
@@ -564,7 +611,7 @@ class WireClass:
             _hash = BomHash(
                 description=self.description,
                 qty_unit=None,
-                amount=self.length,
+                amount=_amount,
                 partnumbers=self.partnumbers,
             )
         return _hash
@@ -613,16 +660,27 @@ class Sleeve(Component):
           pn: CCP0.75BK
           mpn: CCP0.75BK
           manufacturer: Techflex
+          covering: braid  # or "heatshrink"
     The cut length drives the BOM amount (summed by part number, like wire
-    length). `color`/`length` also feed the existing braid-band rendering.
+    length). `color`/`length` also feed the rendering: `covering: braid`
+    (default) draws the interlaced weave band; `covering: heatshrink` draws a
+    solid continuous band instead, since heatshrink is not woven.
     """
 
     color: Optional[SingleColor] = None
     length: Optional[NumberAndUnit] = None
+    covering: Optional[str] = None
 
     def __post_init__(self):
+        self.covering = (self.covering or "braid").strip().lower()
+        if self.covering not in ("braid", "heatshrink"):
+            raise Exception(
+                f"sleeve covering must be 'braid' or 'heatshrink', got {self.covering!r}"
+            )
         if self.type is None:
-            self.type = "Braided sleeving"
+            self.type = (
+                "Heat shrink tubing" if self.covering == "heatshrink" else "Braided sleeving"
+            )
         super().__post_init__()
         self.color = SingleColor(self.color)
         self.length = parse_number_and_unit(self.length, "m")
@@ -634,6 +692,11 @@ class Cable(TopLevelGraphicalComponent):
     # cable-specific properties
     gauge: Optional[NumberAndUnit] = None
     length: Optional[NumberAndUnit] = None
+    # TOTAL cut length per wire, for wires spanning several bundles via
+    # `continuations:`. Declared once per chain; every cable in that chain must
+    # then omit `length:` (enforced in wv_harness.add_continuation). Scalar or
+    # a per-wire list, same rules as `length:`.
+    total_length: Optional[NumberAndUnit] = None
     color_code: Optional[str] = None
     # wire information in particular
     wirecount: Optional[int] = None
@@ -643,6 +706,9 @@ class Cable(TopLevelGraphicalComponent):
     )
     sleeve_length: Optional[NumberAndUnit] = (
         None  # cut length of the sleeve; often shorter than the wire length
+    )
+    sleeve_covering: Optional[str] = (
+        None  # "braid" (default) or "heatshrink"; selects the band rendering
     )
     sleeve: Optional[Any] = (
         None  # nested sleeve: object (color/length/pn/mpn/manufacturer) -> Sleeve;
@@ -778,6 +844,8 @@ class Cable(TopLevelGraphicalComponent):
                 self.sleeve_color = _sl.get("color")
             if _sl.get("length") is not None:
                 self.sleeve_length = _sl.get("length")
+            if _sl.get("covering") is not None:
+                self.sleeve_covering = _sl.get("covering")
             self.sleeve = Sleeve(
                 type=_sl.get("type"),
                 subtype=_sl.get("subtype"),
@@ -788,12 +856,24 @@ class Cable(TopLevelGraphicalComponent):
                 mpn=_sl.get("mpn"),
                 supplier=_sl.get("supplier"),
                 spn=_sl.get("spn"),
+                covering=_sl.get("covering"),
             )
+            # the Sleeve object normalizes/validates covering; mirror that back
+            # onto the flat attribute the renderer reads.
+            self.sleeve_covering = self.sleeve.covering
         elif self.sleeve is not None and not isinstance(self.sleeve, Sleeve):
             raise Exception("'sleeve' must be a mapping of sleeve properties")
 
         self.sleeve_color = SingleColor(self.sleeve_color)
         self.sleeve_length = parse_number_and_unit(self.sleeve_length, "m")
+        if self.sleeve_color:
+            self.sleeve_covering = (self.sleeve_covering or "braid").strip().lower()
+            if self.sleeve_covering not in ("braid", "heatshrink"):
+                raise Exception(
+                    f"sleeve_covering must be 'braid' or 'heatshrink', got {self.sleeve_covering!r}"
+                )
+        else:
+            self.sleeve_covering = None
         # jacket: true -> black; a color string -> that color; false/none -> off
         if self.jacket is True:
             self.jacket = SingleColor("BK")
@@ -833,6 +913,18 @@ class Cable(TopLevelGraphicalComponent):
         else:
             self.length_list = None
             self.length = parse_number_and_unit(self.length, "m")
+        if isinstance(self.total_length, list):
+            # per-wire declared totals (bundles only; validated below)
+            self.total_length_list = [
+                parse_number_and_unit(l, "m") for l in self.total_length
+            ]
+            units = set(l.unit for l in self.total_length_list)
+            if len(units) > 1:
+                raise Exception("all wire total lengths must use the same unit")
+            self.total_length = max(self.total_length_list, key=lambda l: l.number)
+        else:
+            self.total_length_list = None
+            self.total_length = parse_number_and_unit(self.total_length, "m")
         self.amount = self.length  # for BOM
 
         if self.wirecount:  # number of wires explicitly defined
@@ -884,6 +976,13 @@ class Cable(TopLevelGraphicalComponent):
             if len(self.length_list) != self.wirecount:
                 raise Exception("lists of lengths must match wirecount")
 
+        # if a list of total lengths is provided, same constraints as lengths.
+        if self.total_length_list is not None:
+            if self.category != "bundle":
+                raise Exception("lists of total lengths are only supported for bundles")
+            if len(self.total_length_list) != self.wirecount:
+                raise Exception("lists of total lengths must match wirecount")
+
         # if a list of gauges is provided, same constraints as lengths.
         if self.gauge_list is not None:
             if self.category != "bundle":
@@ -914,6 +1013,11 @@ class Cable(TopLevelGraphicalComponent):
                 ),
                 length=(
                     self.length_list[wire_index] if self.length_list else self.length
+                ),
+                total_length=(
+                    self.total_length_list[wire_index]
+                    if self.total_length_list
+                    else self.total_length
                 ),
                 sum_amounts_in_bom=self.sum_amounts_in_bom,
                 ignore_in_bom=self.ignore_in_bom,

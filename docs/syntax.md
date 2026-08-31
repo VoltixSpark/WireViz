@@ -34,6 +34,16 @@ continuations:  # splice a bundle wire to a wire in another bundle so they are
                  # connector without terminating, then continues in another sleeve)
   - [<cableA>.<wire>, <cableB>.<wire>]  # <wire> is a wirelabel or 1-based index
   ...                                   # segments are drawn joined; lengths summed
+                 # REQUIREMENT: both <cableA> and <cableB> must ALSO each appear in
+                 # their own `connections:` entry (see "Unconnected components"
+                 # below). A cable defined under `cables:` is only instantiated
+                 # when its designator appears in `connections:` -- listing it in
+                 # `continuations:` alone does NOT register it, and parsing fails
+                 # with `KeyError: '<cableName>'`. If a cable's only connections
+                 # partner used to be the far-side connector and that link is
+                 # replaced by another continuation segment, add a standalone
+                 # connection-set entry for it (a cable with no connector on
+                 # either side is valid, e.g. `- - B3: [1, 2, 3, 4, 5, 6, 7]`).
 
 metadata:  # dictionary of meta-information describing the harness
   <key>   : <value>  # any number of key value pairs (see below)
@@ -128,14 +138,33 @@ tweak:  # optional tweaking of .gv output
                                 # length: [1.0, 1.0, 1.4]
                                 # Each wire's own length is shown on the diagram
                                 # and used in the BOM.
+  total_length: <int/float>[ <unit>]  # fork ext. TOTAL cut length of the whole
+                                # physical wire, for wires spanning several
+                                # bundles via `continuations:`. Declare it on
+                                # exactly ONE cable in the chain; every cable in
+                                # that chain must then omit `length:`. Mixing the
+                                # two, or declaring it twice in one chain, is a
+                                # hard error naming the exact fix.
+                                # Use this when production specifies a total cut
+                                # length and covering lengths, but not how the
+                                # wire divides between bundles: the uncovered
+                                # remainder is set on the bench, so there is no
+                                # per-segment number to author.
+                                # For bundles, a per-wire list may be given (one
+                                # per wire, same unit), e.g.
+                                # total_length: [23.5 in, 23.5 in, 27.5 in]
+                                # Omit it entirely to keep the legacy behavior,
+                                # where a chain's total is the SUM of each
+                                # segment's own `length:`.
   shield: <bool/color>  # defaults to false
                         # setting to true will display the shield as a thin black line
                         # using a color (see below) will render the shield in that color
                         # A shield can be accessed by using 's' as the wire ID
   color: <color>  # see below
   sleeve_color: <color>  # defaults to none; see below
-                         # draws a colored braided sleeve/wrap around the bundle
-                         # and shows a sleeve-color chip + "Braid" in the header
+                         # draws a colored sleeve/wrap around the bundle and shows
+                         # a sleeve-color chip + "Braid" in the header (use the
+                         # nested sleeve: covering: key below for heatshrink)
   sleeve_length: <int/float>[ <unit>]  # optional cut length of the sleeve
                                         # (often shorter than the wire length, e.g.
                                         # sleeve_length: 15 in). Same unit rules as
@@ -149,14 +178,25 @@ tweak:  # optional tweaking of .gv output
                         # entry needed) and its PN/manufacturer print in the box,
                         # like a cable jacket. length drives the BOM amount and is
                         # summed by part number across cables/bundles.
-    color: <color>           # also draws the braid band (as sleeve_color does)
+    color: <color>           # also draws the sleeve band (as sleeve_color does)
     length: <int/float>[ <unit>]  # cut length; BOM amount, summed by PN
     pn: <str>                # [internal] part number (BOM aggregation key)
     mpn: <str>               # manufacturer part number
     manufacturer: <str>      # manufacturer name
     supplier: <str>          # optional
     spn: <str>               # optional, supplier part number
-    type: <str>              # optional; BOM description (default "Braided sleeving")
+    covering: <str>          # optional; "braid" (default) or "heatshrink".
+                              # Selects BOTH the rendering and the default BOM
+                              # description: "braid" draws the interlaced weave
+                              # band and defaults type to "Braided sleeving";
+                              # "heatshrink" draws a solid continuous band (no
+                              # weave -- heatshrink is not woven) and defaults
+                              # type to "Heat shrink tubing". Only settable via
+                              # the nested sleeve: block, not the flat
+                              # sleeve_color/sleeve_length keys. Any other value
+                              # raises an error at parse time.
+    type: <str>              # optional; BOM description (default depends on
+                              # covering -- see above)
     subtype: <str>           # optional; appended to the description
   jacket: <bool/color>  # defaults to false
                         # draws a solid cable jacket as a thick frame around the
@@ -395,6 +435,8 @@ connections:
 ```
 
 If any component is defined in the `connectors` or `cables` sections but not referenced in `connections`, a warning is printed in the console.
+
+**This is a hard error, not just a cosmetic warning, for any cable also referenced in `continuations:`.** `add_continuation()` resolves each side by looking the cable up in the already-populated harness (`self.cables[cable_name]`), which is only populated by processing `connections:`. A continuation-only cable raises `KeyError: '<cableName>'` instead of just being silently omitted from the diagram. See the `continuations:` entry above.
 
 
 ## Metadata entries

@@ -102,15 +102,58 @@ class Harness:
 
     def add_continuation(self, from_cable, from_wire, to_cable, to_wire) -> None:
         # declare that a wire in one bundle is the SAME physical conductor as a
-        # wire in another bundle (a splice / pass-through). They are drawn joined
-        # and their cut lengths are summed for the total.
+        # wire in another bundle (a splice / pass-through). They are drawn joined.
+        # The total cut length comes either from a `total_length:` declared once
+        # in the chain, or (legacy) from summing the per-segment `length:` values.
         fi = self._resolve_wire(from_cable, from_wire)
         ti = self._resolve_wire(to_cable, to_wire)
         head = self.cables[from_cable].wire_objects[fi]
         tail = self.cables[to_cable].wire_objects[ti]
         head.continues_to = tail
         tail.continues_from = head
+        self._check_chain_lengths(head, from_cable, to_cable)
         self.continuations.append((from_cable, fi, to_cable, ti))
+
+    @staticmethod
+    def _check_chain_lengths(node, from_cable, to_cable) -> None:
+        """Reject mixing a declared `total_length:` with per-segment `length:`.
+
+        Only fires on a chain that opted in by declaring `total_length:`
+        somewhere: a chain using the legacy per-segment sum is untouched, so
+        existing harnesses keep rendering unchanged. Mixing the two is a hard
+        error rather than a silent wrong number, because the sum of stale
+        per-segment values would otherwise override nothing and quietly
+        contradict the declared total on a drawing someone cuts wire from.
+        """
+        # walk to the head, then scan the whole chain
+        while node.continues_from is not None:
+            node = node.continues_from
+        declared, lengths = [], []
+        walker = node
+        while walker is not None:
+            if walker.total_length:
+                declared.append(walker)
+            if walker.length:
+                lengths.append(walker)
+            walker = walker.continues_to
+        if not declared:
+            return
+        if lengths:
+            d = declared[0]
+            bad = lengths[0]
+            raise Exception(
+                f"wire chain {from_cable}..{to_cable}: "
+                f"'{d.parent}' declares total_length for wire '{d.label or d.id}', "
+                f"but '{bad.parent}' still sets length for wire "
+                f"'{bad.label or bad.id}'. Remove 'length:' from '{bad.parent}', "
+                f"or delete 'total_length:' from '{d.parent}'."
+            )
+        if len(declared) > 1:
+            names = ", ".join(sorted({w.parent for w in declared}))
+            raise Exception(
+                f"wire chain {from_cable}..{to_cable}: total_length declared more "
+                f"than once (on {names}). Declare it on exactly one cable in the chain."
+            )
 
     def add_connector(self, designator: str, *args, **kwargs) -> None:
         check_old(f"Connector '{designator}'", OLD_CONNECTOR_ATTR, kwargs)
@@ -250,7 +293,14 @@ class Harness:
                     prev = subitem.continues_from
                     if prev is not None and self._continuation_merges(prev, subitem):
                         continue
-                    if subitem.sum_amounts_in_bom and subitem.length:
+                    declared = subitem.chain_declared_total
+                    if subitem.sum_amounts_in_bom and declared:
+                        # A declared total covers the whole physical conductor,
+                        # so it is the BOM amount as-is: the other segments in
+                        # the chain carry no length to add. It may be declared on
+                        # any segment, not just this (head) one.
+                        qty = item.qty * declared.number
+                    elif subitem.sum_amounts_in_bom and subitem.length:
                         # sum this wire plus any downstream segments that merge
                         # into it (same physical conductor across bundles).
                         total = subitem.length.number + self._merged_downstream_length(

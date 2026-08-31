@@ -90,8 +90,10 @@ def test_connection_labels_pin_mode_drops_label(tmp_path):
 
 
 def test_sleeve_band_spans_full_wire_row(tmp_path):
-    # the braid band colspan must equal the wire-row cell count (8 for a bundle
-    # with BOM badges on, the default), not the old hard-coded 6.
+    # the sleeve band colspan must equal the wire-row cell count (8 for a bundle
+    # with BOM badges on, the default), not the old hard-coded 6. Was 9 until
+    # the per-segment length column was dropped in favor of showing only each
+    # wire's total cut length.
     gv = _gv(
         tmp_path,
         """
@@ -107,7 +109,7 @@ def test_sleeve_band_spans_full_wire_row(tmp_path):
         """,
     )
     colspans = set(re.findall(r'colspan="(\d+)"', gv))
-    assert "9" in colspans, "band/wire-bar should span all 9 columns"
+    assert "8" in colspans, "band/wire-bar should span all 8 columns"
     assert "6" not in colspans, "stale hard-coded colspan=6 must be gone"
 
 

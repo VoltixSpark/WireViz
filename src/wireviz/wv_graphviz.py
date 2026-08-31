@@ -356,7 +356,7 @@ def gv_connector_loops(connector: Connector) -> List:
 def gv_sleeve_header_cell(
     component, show_part_numbers: bool = True
 ) -> Optional[Td]:
-    """Header indicator for a sleeved bundle: a sleeve-color chip + "Braid [len]"."""
+    """Header indicator for a sleeved bundle: a sleeve-color chip + "Braid/Heatshrink [len]"."""
     if not component.sleeve_color:
         return None
     chip = Td(
@@ -367,9 +367,11 @@ def gv_sleeve_header_cell(
         width=10,
         fixedsize="true",
     )
-    label = "Braid"
+    covering = getattr(component, "sleeve_covering", None) or "braid"
+    label_word = "Heatshrink" if covering == "heatshrink" else "Braid"
+    label = label_word
     if component.sleeve_length_str:
-        label = f"Braid {component.sleeve_length_str}"
+        label = f"{label_word} {component.sleeve_length_str}"
     text = Td(label, align="left")
     rows = [Tr([chip, text])]
 
@@ -424,6 +426,22 @@ def gv_sleeve_braid_band(
     return Table(band_rows, border=0, cellborder=0, cellspacing=0, cellpadding=0)
 
 
+def gv_sleeve_solid_band(
+    hex_main: str, ncells: int = 26, cw: int = 9, ch: int = 5
+) -> Table:
+    """Return a Table that draws a solid, continuous sleeve band.
+
+    Used for heatshrink coverings: unlike braided sleeving, heatshrink is not
+    woven, so it reads correctly as one uninterrupted band of color rather
+    than the interlaced weave gv_sleeve_braid_band draws.
+    """
+    cells = [
+        Td("", bgcolor=hex_main, width=cw, height=ch, border=0) for _ in range(ncells)
+    ]
+    band_row = Tr(cells)
+    return Table([band_row], border=0, cellborder=0, cellspacing=0, cellpadding=0)
+
+
 def gv_conductor_table(
     cable,
     show_part_numbers: bool = True,
@@ -431,23 +449,28 @@ def gv_conductor_table(
     show_connection_labels: str = "full",
 ) -> Table:
     rows = []
-    # a colored sleeve is drawn as a woven braid band across the top and bottom
-    # of the conductor bundle, with thin colored side rails around the table
+    # a colored sleeve is drawn as a band across the top and bottom of the
+    # conductor bundle, with thin colored side rails around the table: a
+    # woven weave for braid, a solid continuous band for heatshrink.
     sleeve_hex = cable.sleeve_color.html if cable.sleeve_color else None
+    sleeve_covering = getattr(cable, "sleeve_covering", None) or "braid"
+    sleeve_band_fn = (
+        gv_sleeve_solid_band if sleeve_covering == "heatshrink" else gv_sleeve_braid_band
+    )
     # a solid jacket is drawn as a thick frame around the conductor block
     # (no woven bands) so it reads as a continuous outer jacket, not a braid.
     jacket_hex = cable.jacket.html if getattr(cable, "jacket", None) else None
     # Each wire-info row has fixed cells: in-endpoint, spacer, [BOM bubble for
-    # bundles], label, gauge, segment length, total, spacer, out-endpoint. The
-    # sleeve and jacket bands must span all of them, so derive the colspan from
-    # that cell count rather than hard-coding it (adding/removing a wire-row
-    # column without updating this would shrink the band).
+    # bundles], label, gauge, total length, spacer, out-endpoint. The sleeve and
+    # jacket bands must span all of them, so derive the colspan from that cell
+    # count rather than hard-coding it (adding/removing a wire-row column
+    # without updating this would shrink the band).
     has_bubble_col = show_bom_references and cable.category == "bundle"
-    wire_colspan = 9 if has_bubble_col else 8
+    wire_colspan = 8 if has_bubble_col else 7
     sleeve_colspan = wire_colspan
     rows.append(Tr(Td("&nbsp;")))  # spacer row on top
     if sleeve_hex:
-        rows.append(Tr(Td(gv_sleeve_braid_band(sleeve_hex), colspan=sleeve_colspan)))
+        rows.append(Tr(Td(sleeve_band_fn(sleeve_hex), colspan=sleeve_colspan)))
 
     inserted_break_inbetween = False
     for wire in cable.wire_objects.values():
@@ -481,22 +504,17 @@ def gv_conductor_table(
         else:
             gauge_text = ""
 
-        if getattr(cable, "length_list", None) and not isinstance(wire, ShieldClass):
-            # per-wire lengths differ; show each wire's own cut length
-            seg_text = f"{wire.length.number} {wire.length.unit}"
-        else:
-            seg_text = ""
-
-        # continuation: same conductor spans another bundle; show the summed
-        # cut length on every segment so the total is visible wherever read.
-        if (
-            getattr(wire, "continues_to", None) is not None
-            or getattr(wire, "continues_from", None) is not None
-        ):
-            t = wire.chain_total_length
-            total_text = f"{t.number} {t.unit} total"
-        else:
+        # Production reads one number per wire: the total cut length of the
+        # whole physical conductor, shown on EVERY segment box it passes
+        # through so it is legible wherever the drawing is read. Per-segment
+        # lengths are deliberately not drawn: how much of the wire sits under
+        # each covering is conveyed by the coverings' own lengths in the box
+        # headers, and the uncovered remainder is set on the bench.
+        if isinstance(wire, ShieldClass):
             total_text = ""
+        else:
+            t = wire.chain_total_length
+            total_text = f"{t.number} {t.unit} total" if t else ""
 
         # the connection-endpoint labels (e.g. "C2:1:GND") duplicate the wire
         # schedule's From/To columns and often clutter the box. Tri-state:
@@ -533,7 +551,6 @@ def gv_conductor_table(
             else None,
             Td(label_text or " ", align="left"),
             Td(gauge_text or " ", align="right"),
-            Td(seg_text or " ", align="right"),
             Td(total_text or " ", align="right"),
             Td(" "),  # increase cell spacing here
             Td(outs_text + " ", align="right"),
@@ -562,7 +579,7 @@ def gv_conductor_table(
 
     rows.append(Tr(Td("&nbsp;")))  # spacer row on bottom
     if sleeve_hex:
-        rows.append(Tr(Td(gv_sleeve_braid_band(sleeve_hex), colspan=sleeve_colspan)))
+        rows.append(Tr(Td(sleeve_band_fn(sleeve_hex), colspan=sleeve_colspan)))
 
     # outer frame: a solid jacket takes precedence and is drawn as a thick
     # frame in the jacket color; a sleeve (braid) uses a thinner side rail.
