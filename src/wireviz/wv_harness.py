@@ -114,33 +114,33 @@ class Harness:
         self._check_chain_lengths(head, from_cable, to_cable)
         self.continuations.append((from_cable, fi, to_cable, ti))
 
-    @staticmethod
-    def _check_chain_lengths(node, from_cable, to_cable) -> None:
-        """Reject mixing a declared `total_length:` with per-segment `length:`.
+    @classmethod
+    def _check_chain_lengths(cls, node, from_cable, to_cable) -> None:
+        """Validate a continuation chain that declares `total_length:`.
 
         Only fires on a chain that opted in by declaring `total_length:`
         somewhere: a chain using the legacy per-segment sum is untouched, so
-        existing harnesses keep rendering unchanged. Mixing the two is a hard
-        error rather than a silent wrong number, because the sum of stale
-        per-segment values would otherwise override nothing and quietly
-        contradict the declared total on a drawing someone cuts wire from.
+        existing harnesses keep rendering unchanged. Three ways to get it
+        wrong, all hard errors rather than a silently wrong number on a
+        drawing someone cuts wire from:
+
+        1. mixing it with a per-segment `length:` (which of the two is the
+           real cut length is then anyone's guess),
+        2. declaring it on more than one cable in the chain,
+        3. declaring it on a chain that spans a non-merging boundary. A
+           segment that is a distinct part gets its own BOM line, and each
+           such line would independently claim the whole declared total, so
+           one 23.5 in conductor would be billed 47 in. A chain of different
+           part numbers needs a length per part, which is what per-segment
+           `length:` is for.
         """
-        # walk to the head, then scan the whole chain
-        while node.continues_from is not None:
-            node = node.continues_from
-        declared, lengths = [], []
-        walker = node
-        while walker is not None:
-            if walker.total_length:
-                declared.append(walker)
-            if walker.length:
-                lengths.append(walker)
-            walker = walker.continues_to
+        chain = list(node._chain_nodes())
+        declared = [w for w in chain if w.total_length]
         if not declared:
             return
+        lengths = [w for w in chain if w.length]
         if lengths:
-            d = declared[0]
-            bad = lengths[0]
+            d, bad = declared[0], lengths[0]
             raise Exception(
                 f"wire chain {from_cable}..{to_cable}: "
                 f"'{d.parent}' declares total_length for wire '{d.label or d.id}', "
@@ -154,6 +154,15 @@ class Harness:
                 f"wire chain {from_cable}..{to_cable}: total_length declared more "
                 f"than once (on {names}). Declare it on exactly one cable in the chain."
             )
+        for prev, nxt in zip(chain, chain[1:]):
+            if not cls._continuation_merges(prev, nxt):
+                raise Exception(
+                    f"wire chain {from_cable}..{to_cable}: '{declared[0].parent}' "
+                    f"declares total_length, but '{nxt.parent}' is a distinct part "
+                    f"from '{prev.parent}' and so gets its own BOM line, which "
+                    f"would bill the full total again. Give each part its own "
+                    f"'length:' instead of declaring a total for the chain."
+                )
 
     def add_connector(self, designator: str, *args, **kwargs) -> None:
         check_old(f"Connector '{designator}'", OLD_CONNECTOR_ATTR, kwargs)
@@ -316,8 +325,13 @@ class Harness:
                         category=cat,
                     )
             else:
+                declared = getattr(item, "total_length", None)
                 item_length = getattr(item, "length", None)
-                if item.sum_amounts_in_bom and item_length:
+                if item.sum_amounts_in_bom and declared:
+                    # A declared total already covers the whole run, so it is
+                    # the amount as-is: no downstream extension to add.
+                    qty = item.qty * declared.number
+                elif item.sum_amounts_in_bom and item_length:
                     # A jacketed cable's conductors may continue into a convergence
                     # bundle; that run is extra cable stock. Add it only when every
                     # conductor extends by the same amount (otherwise a single

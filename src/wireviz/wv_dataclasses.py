@@ -537,6 +537,37 @@ class WireClass:
     continues_to: Optional["WireClass"] = None
     continues_from: Optional["WireClass"] = None
 
+    def _chain_head(self) -> "WireClass":
+        """Walk back to the first segment of this conductor.
+
+        Guards against a cyclic `continuations:` (e.g. A.W1->B.W1 and
+        B.W1->A.W1), which would otherwise spin forever at parse time, before
+        anything is rendered or reported.
+        """
+        node, seen = self, {id(self)}
+        while node.continues_from is not None:
+            node = node.continues_from
+            if id(node) in seen:
+                raise Exception(
+                    f"cyclic continuation involving wire "
+                    f"'{node.label or node.id}' on '{node.parent}'"
+                )
+            seen.add(id(node))
+        return node
+
+    def _chain_nodes(self):
+        """Yield every segment of this conductor, head first (cycle-guarded)."""
+        node, seen = self._chain_head(), set()
+        while node is not None:
+            if id(node) in seen:
+                raise Exception(
+                    f"cyclic continuation involving wire "
+                    f"'{node.label or node.id}' on '{node.parent}'"
+                )
+            seen.add(id(node))
+            yield node
+            node = node.continues_to
+
     @property
     def chain_declared_total(self) -> Optional[NumberAndUnit]:
         """The `total_length:` declared anywhere in this wire's chain, if any.
@@ -545,13 +576,9 @@ class WireClass:
         callers keep the legacy math (which stops at segments that are distinct
         parts) instead of the whole-chain sum.
         """
-        node = self
-        while node.continues_from is not None:
-            node = node.continues_from
-        while node is not None:
+        for node in self._chain_nodes():
             if node.total_length:
                 return node.total_length
-            node = node.continues_to
         return None
 
     @property
@@ -571,11 +598,6 @@ class WireClass:
         length, so a length-free segment still reports the chain's total
         rather than None.
         """
-        # walk to the head of the chain
-        head = self
-        while head.continues_from is not None:
-            head = head.continues_from
-
         # a declared total anywhere in the chain wins over the segment sum
         declared = self.chain_declared_total
         if declared:
@@ -584,22 +606,21 @@ class WireClass:
         total = 0
         unit = None
         found = False
-        node = head
-        while node is not None:
+        for node in self._chain_nodes():
             if node.length:
                 if unit is None:
                     unit = node.length.unit
                 total += node.length.number
                 found = True
-            node = node.continues_to
         return NumberAndUnit(total, unit) if found else None
 
     @property
     def bom_hash(self) -> BomHash:
-        # a wire in a chain that declares a total carries no `length:`, so fall
-        # back to that declared total (which may sit on any segment of the
-        # chain) for the BOM unit/amount.
-        _amount = self.length or self.chain_declared_total
+        # A declared total (which may sit on any segment of the chain) is the
+        # BOM amount for the whole conductor, so it takes precedence over this
+        # segment's own `length:`. Must agree with the qty computed in
+        # Harness._add_to_internal_bom, or the row's number and unit disagree.
+        _amount = self.chain_declared_total or self.length
         if self.sum_amounts_in_bom:
             _hash = BomHash(
                 description=self.description,
@@ -672,11 +693,14 @@ class Sleeve(Component):
     covering: Optional[str] = None
 
     def __post_init__(self):
-        self.covering = (self.covering or "braid").strip().lower()
-        if self.covering not in ("braid", "heatshrink"):
+        # str() first: a bare `covering: 1` / `covering: true` is a plausible
+        # typo and must reach the message below, not an AttributeError.
+        _cov = "braid" if self.covering is None else str(self.covering).strip().lower()
+        if _cov not in ("braid", "heatshrink"):
             raise Exception(
                 f"sleeve covering must be 'braid' or 'heatshrink', got {self.covering!r}"
             )
+        self.covering = _cov
         if self.type is None:
             self.type = (
                 "Heat shrink tubing" if self.covering == "heatshrink" else "Braided sleeving"
@@ -867,11 +891,17 @@ class Cable(TopLevelGraphicalComponent):
         self.sleeve_color = SingleColor(self.sleeve_color)
         self.sleeve_length = parse_number_and_unit(self.sleeve_length, "m")
         if self.sleeve_color:
-            self.sleeve_covering = (self.sleeve_covering or "braid").strip().lower()
-            if self.sleeve_covering not in ("braid", "heatshrink"):
+            _cov = (
+                "braid"
+                if self.sleeve_covering is None
+                else str(self.sleeve_covering).strip().lower()
+            )
+            if _cov not in ("braid", "heatshrink"):
                 raise Exception(
-                    f"sleeve_covering must be 'braid' or 'heatshrink', got {self.sleeve_covering!r}"
+                    f"sleeve_covering must be 'braid' or 'heatshrink', "
+                    f"got {self.sleeve_covering!r}"
                 )
+            self.sleeve_covering = _cov
         else:
             self.sleeve_covering = None
         # jacket: true -> black; a color string -> that color; false/none -> off
@@ -925,7 +955,8 @@ class Cable(TopLevelGraphicalComponent):
         else:
             self.total_length_list = None
             self.total_length = parse_number_and_unit(self.total_length, "m")
-        self.amount = self.length  # for BOM
+        # for BOM; a cable authored with `total_length:` carries no `length:`
+        self.amount = self.length or self.total_length
 
         if self.wirecount:  # number of wires explicitly defined
             if self.colors:  # use custom color palette (partly or looped if needed)
@@ -975,6 +1006,18 @@ class Cable(TopLevelGraphicalComponent):
                 raise Exception("lists of lengths are only supported for bundles")
             if len(self.length_list) != self.wirecount:
                 raise Exception("lists of lengths must match wirecount")
+
+        # `total_length:` states the whole conductor's cut length, so a
+        # per-segment `length:` on the same cable is contradictory. Checked here
+        # (not only when a continuation is linked) so a lone cable setting both
+        # is rejected too, rather than silently letting the total win.
+        if self.total_length and self.length:
+            raise Exception(
+                f"cable '{self.designator}' sets both 'length' and "
+                f"'total_length'. 'total_length' is the whole wire's cut "
+                f"length; remove 'length:' from this cable, or drop "
+                f"'total_length:' and let the per-segment lengths sum."
+            )
 
         # if a list of total lengths is provided, same constraints as lengths.
         if self.total_length_list is not None:
@@ -1062,16 +1105,21 @@ class Cable(TopLevelGraphicalComponent):
 
     def compute_qty_multipliers(self):
         # do not run before all connections in harness have been made!
+        # A wire authored with `total_length:` carries no `length:` of its own,
+        # so fall back to its declared total for both multipliers.
         total_length = sum(
             [
-                wire.length.number if wire.length else 0
-                for wire in self.wire_objects.values()
+                (w.length or w.chain_declared_total).number
+                if (w.length or w.chain_declared_total)
+                else 0
+                for w in self.wire_objects.values()
             ]
         )
+        _len = self.length or self.total_length
         qty_multipliers_computed = {
             "WIRECOUNT": len(self.wire_objects),
             # "TERMINATIONS": ___,  # TODO
-            "LENGTH": self.length.number if self.length else 0,
+            "LENGTH": _len.number if _len else 0,
             "TOTAL_LENGTH": total_length,
         }
         for subitem in self.additional_components:
@@ -1085,8 +1133,9 @@ class Cable(TopLevelGraphicalComponent):
                             f"{subitem.qty_multiplier.name} as a multiplier."
                         )
                     subitem.qty_computed = subitem.qty if subitem.qty else 1
+                    _unit_src = self.length or self.total_length
                     subitem.amount_computed = NumberAndUnit(
-                        computed_factor, self.length.unit
+                        computed_factor, _unit_src.unit if _unit_src else None
                     )
                 else:
                     # multiplier unrelated to length, therefore no unit

@@ -434,12 +434,15 @@ def gv_sleeve_solid_band(
     Used for heatshrink coverings: unlike braided sleeving, heatshrink is not
     woven, so it reads correctly as one uninterrupted band of color rather
     than the interlaced weave gv_sleeve_braid_band draws.
+
+    Emits the same two rows as the braid band so both coverings read as the
+    same thickness on a drawing carrying each; only the texture differs.
     """
-    cells = [
-        Td("", bgcolor=hex_main, width=cw, height=ch, border=0) for _ in range(ncells)
+    band_rows = [
+        Tr([Td("", bgcolor=hex_main, width=cw, height=ch, border=0) for _ in range(ncells)])
+        for _ in range(2)
     ]
-    band_row = Tr(cells)
-    return Table([band_row], border=0, cellborder=0, cellspacing=0, cellpadding=0)
+    return Table(band_rows, border=0, cellborder=0, cellspacing=0, cellpadding=0)
 
 
 def gv_conductor_table(

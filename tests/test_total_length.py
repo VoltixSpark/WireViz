@@ -155,3 +155,173 @@ def test_single_segment_bundle_shows_its_total(tmp_path):
     )
     gv = (tmp_path / "s.gv").read_text(encoding="utf-8")
     assert "23 in total" in gv
+
+
+# --- regressions from the code review of the total_length/covering commit ---
+
+MIXED = """
+connectors:
+  X1: {{pincount: 1}}
+  X2: {{pincount: 1}}
+cables:
+  A:
+    category: bundle
+    gauge: 22 AWG
+    colors: [YE]
+    wirelabels: [W1]
+    mpn: ["M1"]
+{a}
+  B:
+    category: bundle
+    colors: [YE]
+    wirelabels: [W1]
+{b}
+continuations:
+- [A.W1, B.W1]
+connections:
+- - X1: [1]
+  - A: [1]
+- - B: [1]
+  - X2: [1]
+"""
+
+
+def test_distinct_part_in_chain_rejects_declared_total():
+    # B has its own gauge + PN, so it does not merge into A and would get its
+    # own BOM line; without this guard both lines billed the full total.
+    with pytest.raises(Exception) as e:
+        wv.parse(
+            yaml.safe_load(
+                MIXED.format(
+                    a="    total_length: 23.5 in",
+                    b='    gauge: 24 AWG\n    mpn: ["M2"]',
+                )
+            ),
+            return_types=("harness",),
+            output_dir=".",
+            output_name="t",
+        )
+    assert "distinct part" in str(e.value)
+
+
+def test_single_cable_cannot_set_both_length_and_total_length():
+    # no continuations at all: the chain guard never runs, so Cable must reject it
+    with pytest.raises(Exception) as e:
+        wv.parse(
+            yaml.safe_load(
+                """
+                connectors: {A: {pincount: 1}, B: {pincount: 1}}
+                cables:
+                  W1:
+                    category: bundle
+                    colors: [RD]
+                    length: 10 in
+                    total_length: 23.5 in
+                connections: [[{A: [1]}, {W1: [1]}, {B: [1]}]]
+                """
+            ),
+            return_types=("harness",),
+            output_dir=".",
+            output_name="t",
+        )
+    assert "both 'length' and 'total_length'" in str(e.value)
+
+
+def test_non_bundle_cable_with_total_length_keeps_its_bom_amount():
+    h = wv.parse(
+        yaml.safe_load(
+            """
+            connectors: {A: {pincount: 1}, B: {pincount: 1}}
+            cables:
+              C1:
+                wirecount: 1
+                colors: [RD]
+                mpn: CAB1
+                total_length: 30 in
+            connections: [[{A: [1]}, {C1: [1]}, {B: [1]}]]
+            """
+        ),
+        return_types=("harness",),
+        output_dir=".",
+        output_name="t",
+    )
+    rows = [
+        (v["qty"], bh.qty_unit)
+        for bh, v in h.bom.items()
+        if bh.partnumbers and bh.partnumbers.mpn == "CAB1"
+    ]
+    assert rows == [(30, "in")]
+
+
+def test_qty_multiplier_length_works_without_a_segment_length():
+    h = wv.parse(
+        yaml.safe_load(
+            """
+            connectors: {A: {pincount: 1}, B: {pincount: 1}}
+            cables:
+              W1:
+                category: bundle
+                colors: [RD]
+                total_length: 23.5 in
+                additional_components:
+                  - type: Sleeve
+                    qty_multiplier: LENGTH
+            connections: [[{A: [1]}, {W1: [1]}, {B: [1]}]]
+            """
+        ),
+        return_types=("harness",),
+        output_dir=".",
+        output_name="t",
+    )
+    sub = h.cables["W1"].additional_components[0]
+    assert sub.amount_computed.number == 23.5
+    assert sub.amount_computed.unit == "in"
+
+
+@pytest.mark.parametrize("bad", [1, True, "woven"])
+def test_bad_sleeve_covering_gives_a_readable_error(bad):
+    with pytest.raises(Exception) as e:
+        wv.parse(
+            yaml.safe_load(
+                f"""
+                connectors: {{A: {{pincount: 1}}, B: {{pincount: 1}}}}
+                cables:
+                  W1:
+                    category: bundle
+                    colors: [RD]
+                    length: 5 in
+                    sleeve: {{color: BK, length: 5 in, covering: {bad}}}
+                connections: [[{{A: [1]}}, {{W1: [1]}}, {{B: [1]}}]]
+                """
+            ),
+            return_types=("harness",),
+            output_dir=".",
+            output_name="t",
+        )
+    assert "braid" in str(e.value) and "heatshrink" in str(e.value)
+
+
+def test_cyclic_continuation_raises_instead_of_hanging():
+    with pytest.raises(Exception) as e:
+        wv.parse(
+            yaml.safe_load(
+                """
+                connectors: {X1: {pincount: 1}, X2: {pincount: 1}}
+                cables:
+                  A: {category: bundle, colors: [YE], wirelabels: [W1], length: 5 in}
+                  B: {category: bundle, colors: [YE], wirelabels: [W1], length: 5 in}
+                continuations:
+                - [A.W1, B.W1]
+                - [B.W1, A.W1]
+                connections:
+                - - X1: [1]
+                  - A: [1]
+                - - B: [1]
+                  - X2: [1]
+                """
+            ),
+            return_types=("harness",),
+            output_dir=".",
+            output_name="t",
+        )
+    assert "cyclic" in str(e.value)
