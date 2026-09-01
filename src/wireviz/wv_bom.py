@@ -95,6 +95,22 @@ def pn_info_string(
         return None
 
 
+def _tidy_qty(qty):
+    """Round binary-float noise out of a displayed quantity.
+
+    Summing 0.1 three times produced "0.30000000000000004" verbatim in the
+    .bom.tsv. Rounds to 6 decimals, which is far finer than any real cut
+    length, and drops a trailing ".0" so whole counts read as counts. Never
+    rounds DOWN to zero: 1e-9 stays visible rather than becoming a free part.
+    """
+    if not isinstance(qty, float):
+        return qty
+    r = round(qty, 6)
+    if r == 0 and qty != 0:
+        return qty  # too small to round; show it rather than imply zero
+    return int(r) if r == int(r) else r
+
+
 def bom_list(bom):
     headers = (
         "# Qty Unit Description Amount Unit Designators "
@@ -106,7 +122,7 @@ def bom_list(bom):
     for hash, entry in bom.items():
         cells = [
             entry["id"],
-            entry["qty"],
+            _tidy_qty(entry["qty"]),
             hash.qty_unit,
             hash.description,
             hash.amount.number if hash.amount else None,

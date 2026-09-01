@@ -43,6 +43,21 @@ from wireviz.wv_output import (
 from wireviz.wv_utils import OLD_CONNECTOR_ATTR, bom2tsv, check_old, file_write_text
 
 
+def _same_color(a, b) -> bool:
+    """Whether two wires carry the same color, treating "no color" as a match.
+
+    Used to decide whether a continuation segment is the same physical
+    conductor. A convergence bundle repeats the incoming wire's color, so the
+    intended pass-through matches; two different conductors spliced end to end
+    do not.
+    """
+    ca = getattr(a, "color", None)
+    cb = getattr(b, "color", None)
+    if not ca or not cb:
+        return True  # one side unspecified: fall back to the old behavior
+    return str(ca) == str(cb)
+
+
 @dataclass
 class Harness:
     metadata: Metadata
@@ -82,7 +97,13 @@ class Harness:
             [pn.pn, pn.manufacturer, pn.mpn, pn.supplier, pn.spn]
         )
         if not nxt_has_pn and nxt.gauge is None:
-            return True
+            # Pure pass-through, but only if it is also the same CONDUCTOR.
+            # Without the color check this returned True unconditionally, so a
+            # red wire continuing into a blue one merged into a single BOM line
+            # and the blue wire's identity and length disappeared. A
+            # convergence bundle carries the same color as the wire entering
+            # it, so the intended case still merges.
+            return _same_color(prev, nxt)
         return (
             nxt.description == prev.description
             and getattr(nxt, "partnumbers", None) == getattr(prev, "partnumbers", None)
@@ -364,13 +385,14 @@ class Harness:
                     category=cat,
                 )
 
-            # sleeve over a cable/bundle, if it carries part-number info
+            # Sleeve over a cable/bundle. Billed whether or not it carries a
+            # part number: it is a real, cuttable material with a length, and
+            # gating on has_pn_info silently dropped 8 in of heatshrink from
+            # the BOM just because nobody had filled in an MPN yet. A row with
+            # no part number is a visible prompt to supply one; a missing row
+            # is not. This matches additional_components, which never gated.
             sleeve = getattr(item, "sleeve", None)
-            if (
-                sleeve is not None
-                and sleeve.has_pn_info
-                and not sleeve.ignore_in_bom
-            ):
+            if sleeve is not None and not sleeve.ignore_in_bom:
                 if sleeve.sum_amounts_in_bom and sleeve.amount:
                     sleeve_qty = item.qty * sleeve.amount.number
                 else:

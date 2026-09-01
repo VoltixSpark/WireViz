@@ -278,6 +278,15 @@ class Component:
 class AdditionalBomItem(Component):
     designators: Optional[str] = None
 
+    def __post_init__(self):
+        # Default qty like Connector/Cable do. Without this, an entry omitting
+        # `qty:` blew up deep in BOM aggregation with
+        # "unsupported operand type(s) for +=: 'int' and 'NoneType'",
+        # which says nothing about the line the author actually needs to fix.
+        super().__post_init__()
+        if self.qty is None:
+            self.qty = 1
+
     @property
     def additional_components(self):
         # An additional item may not have further nested additional comonents.
@@ -1100,6 +1109,12 @@ class Cable(TopLevelGraphicalComponent):
                     if isinstance(self.shield, str)
                     else MultiColor(None)
                 ),
+                # A shield is a real conductor and runs the length of the
+                # cable. Without this it carried no length, so the bundle BOM
+                # loop fell through to qty=1 with no unit, quietly replacing a
+                # drain wire's actual cut length with a meaningless "1".
+                length=self.length,
+                total_length=self.total_length,
                 parent=self.designator,
             )
 
@@ -1156,7 +1171,17 @@ class Cable(TopLevelGraphicalComponent):
         }
         for subitem in self.additional_components:
             if isinstance(subitem.qty_multiplier, QtyMultiplierCable):
-                computed_factor = qty_multipliers_computed[subitem.qty_multiplier.name]
+                _name = subitem.qty_multiplier.name
+                if _name not in qty_multipliers_computed:
+                    # TERMINATION is accepted as a valid name when the YAML is
+                    # parsed but was never implemented here, so using it raised
+                    # a bare KeyError at render time naming nothing useful.
+                    raise Exception(
+                        f"cable '{self.designator}': qty_multiplier '{_name}' is "
+                        f"not supported. Use one of: "
+                        f"{', '.join(sorted(qty_multipliers_computed))}."
+                    )
+                computed_factor = qty_multipliers_computed[_name]
                 if subitem.qty_multiplier.name in ["LENGTH", "TOTAL_LENGTH"]:
                     # since length can have a unit, use amount fields to hold
                     if subitem.amount is not None:
