@@ -92,10 +92,23 @@ class Harness:
         # Sum the lengths of downstream continuation segments that merge into
         # `wire` (same physical conductor continuing across bundles). Segments
         # that are distinct parts stop the walk and are not counted here.
+        #
+        # Raw numbers are added, so every counted segment must share the head's
+        # unit; otherwise the BOM would bill 10 in + 100 mm as 110 of something.
         total = 0
+        unit = wire.length.unit if wire.length else None
         node, nxt = wire, wire.continues_to
         while nxt is not None and self._continuation_merges(node, nxt):
             if nxt.length:
+                if unit is None:
+                    unit = nxt.length.unit
+                elif nxt.length.unit != unit:
+                    raise Exception(
+                        f"wire '{wire.label or wire.id}' on '{wire.parent}' "
+                        f"continues into '{nxt.parent}' with a different length "
+                        f"unit ('{unit}' vs '{nxt.length.unit}'). Use one unit "
+                        f"across the chain, or declare a single 'total_length:'."
+                    )
                 total += nxt.length.number
             node, nxt = nxt, nxt.continues_to
         return total

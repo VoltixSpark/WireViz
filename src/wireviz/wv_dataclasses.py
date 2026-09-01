@@ -603,6 +603,9 @@ class WireClass:
         if declared:
             return declared
 
+        # Legacy sum. Segments must share a unit: this adds raw numbers, so a
+        # chain of 10 in + 100 mm would otherwise report 110 in, a wrong cut
+        # length on a drawing someone cuts wire from. Refuse instead.
         total = 0
         unit = None
         found = False
@@ -610,6 +613,13 @@ class WireClass:
             if node.length:
                 if unit is None:
                     unit = node.length.unit
+                elif node.length.unit != unit:
+                    raise Exception(
+                        f"wire '{self.label or self.id}' spans segments with "
+                        f"mixed length units ('{unit}' and '{node.length.unit}' "
+                        f"on '{node.parent}'). Use one unit across the chain, or "
+                        f"declare a single 'total_length:' for the whole wire."
+                    )
                 total += node.length.number
                 found = True
         return NumberAndUnit(total, unit) if found else None
@@ -1106,16 +1116,28 @@ class Cable(TopLevelGraphicalComponent):
     def compute_qty_multipliers(self):
         # do not run before all connections in harness have been made!
         # A wire authored with `total_length:` carries no `length:` of its own,
-        # so fall back to its declared total for both multipliers.
-        total_length = sum(
-            [
-                (w.length or w.chain_declared_total).number
-                if (w.length or w.chain_declared_total)
-                else 0
-                for w in self.wire_objects.values()
-            ]
-        )
+        # so fall back to its declared total. Those totals can come from
+        # different continuation chains declared on unrelated cables, so unlike
+        # a per-wire `length:` list they are NOT unit-checked at the cable
+        # level. Check here: these numbers are summed raw, and the unit shown
+        # for the result is taken from them.
+        per_wire = [
+            (w.length or w.chain_declared_total) for w in self.wire_objects.values()
+        ]
+        per_wire = [x for x in per_wire if x]
+        units = {x.unit for x in per_wire}
+        if len(units) > 1:
+            raise Exception(
+                f"cable '{self.designator}': wires resolve to lengths in mixed "
+                f"units ({', '.join(sorted(str(u) for u in units))}), so a "
+                f"LENGTH/TOTAL_LENGTH quantity multiplier would add unlike "
+                f"numbers. Use one unit across the bundle and its chains."
+            )
+        total_length = sum(x.number for x in per_wire)
+        # Prefer the cable's own length for LENGTH, but fall back to the unit
+        # the wires actually resolved to, so the amount is never left unlabeled.
         _len = self.length or self.total_length
+        _unit = _len.unit if _len else (per_wire[0].unit if per_wire else None)
         qty_multipliers_computed = {
             "WIRECOUNT": len(self.wire_objects),
             # "TERMINATIONS": ___,  # TODO
@@ -1133,10 +1155,7 @@ class Cable(TopLevelGraphicalComponent):
                             f"{subitem.qty_multiplier.name} as a multiplier."
                         )
                     subitem.qty_computed = subitem.qty if subitem.qty else 1
-                    _unit_src = self.length or self.total_length
-                    subitem.amount_computed = NumberAndUnit(
-                        computed_factor, _unit_src.unit if _unit_src else None
-                    )
+                    subitem.amount_computed = NumberAndUnit(computed_factor, _unit)
                 else:
                     # multiplier unrelated to length, therefore no unit
                     if subitem.qty is not None:

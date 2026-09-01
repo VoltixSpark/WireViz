@@ -325,3 +325,90 @@ def test_cyclic_continuation_raises_instead_of_hanging():
             output_name="t",
         )
     assert "cyclic" in str(e.value)
+
+
+# --- unit-consistency regressions (raw numbers are summed, so units must agree) ---
+
+def test_mixed_units_across_a_legacy_chain_is_rejected():
+    # 10 in + 100 mm previously reported 110 in: a wrong cut length on a
+    # drawing someone cuts wire from.
+    with pytest.raises(Exception) as e:
+        _harness("    length: 10 in", "    length: 100 mm")
+    assert "mixed length units" in str(e.value) or "different length unit" in str(e.value)
+
+
+def test_qty_multiplier_rejects_mixed_units_across_chains():
+    # Each wire passes into a DIFFERENT chain declaring its own total, so the
+    # cable-level unit check on `length:` lists does not cover this.
+    y = """
+connectors:
+  X1: {pincount: 2}
+  X2: {pincount: 2}
+cables:
+  HUB:
+    category: bundle
+    colors: [YE, BK]
+    wirelabels: [W1, W2]
+    additional_components:
+      - type: Sleeve
+        qty_multiplier: TOTAL_LENGTH
+  A:
+    category: bundle
+    colors: [YE]
+    wirelabels: [W1]
+    total_length: 500 mm
+  B:
+    category: bundle
+    colors: [BK]
+    wirelabels: [W2]
+    total_length: 20 in
+continuations:
+- [HUB.W1, A.W1]
+- [HUB.W2, B.W2]
+connections:
+- - X1: [1, 2]
+  - HUB: [1, 2]
+- - A: [1]
+  - X2: [1]
+- - B: [1]
+  - X2: [2]
+"""
+    with pytest.raises(Exception) as e:
+        wv.parse(yaml.safe_load(y), return_types=("harness",),
+                 output_dir=".", output_name="t")
+    assert "mixed units" in str(e.value)
+
+
+def test_qty_multiplier_keeps_the_unit_when_cable_has_no_own_length():
+    # Previously reported amount with unit None because the unit was only ever
+    # read from the cable's own length/total_length.
+    y = """
+connectors:
+  X1: {pincount: 1}
+  X2: {pincount: 1}
+cables:
+  HUB:
+    category: bundle
+    colors: [YE]
+    wirelabels: [W1]
+    additional_components:
+      - type: Sleeve
+        qty_multiplier: TOTAL_LENGTH
+  A:
+    category: bundle
+    colors: [YE]
+    wirelabels: [W1]
+    total_length: 20 in
+continuations:
+- [HUB.W1, A.W1]
+connections:
+- - X1: [1]
+  - HUB: [1]
+- - A: [1]
+  - X2: [1]
+"""
+    h = wv.parse(yaml.safe_load(y), return_types=("harness",),
+                 output_dir=".", output_name="t")
+    sub = h.cables["HUB"].additional_components[0]
+    assert sub.amount_computed.number == 20
+    assert sub.amount_computed.unit == "in"
