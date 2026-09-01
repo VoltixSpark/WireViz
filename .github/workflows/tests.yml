@@ -1,0 +1,55 @@
+name: Tests
+
+# This repo had no test job until 2026-09-01. `main.yml` (inherited from
+# upstream) renders the example gallery and never invokes pytest, so the 51
+# tests in tests/ had never run anywhere except a developer's machine.
+#
+# That mattered more here than in the app repo. Every numeric defect found in
+# the 2026-08/09 review lives in THIS code: a declared cut length billed twice,
+# a jacketed cable losing its BOM amount, lengths in different units summed as
+# if they were the same unit, a quantity labelled with the wrong unit, and a
+# cyclic continuation that hung the parser. Production staff cut wire and order
+# parts from this output, so a silently wrong number is the dominant risk and
+# these tests are the thing standing between it and a bench.
+#
+# The suite takes about 2 seconds.
+on:
+  push:
+    branches: [dev, main, master, "feat/**", "fix/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is included because the app that pins this engine ships a
+        # frozen Windows .exe, and path handling is where the two diverge.
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # The engine shells out to `dot`; without it every render test fails.
+      - name: Set up Graphviz
+        uses: ts-graphviz/setup-graphviz@v2
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-timeout
+
+      # --timeout guards the class of defect that hung the parser forever on a
+      # cyclic continuations entry. Without it that failure mode is a job that
+      # runs until the runner is killed, reported as infrastructure flake.
+      - name: Run tests
+        run: pytest tests -q --timeout=120
