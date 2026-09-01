@@ -965,8 +965,18 @@ class Cable(TopLevelGraphicalComponent):
         else:
             self.total_length_list = None
             self.total_length = parse_number_and_unit(self.total_length, "m")
-        # for BOM; a cable authored with `total_length:` carries no `length:`
-        self.amount = self.length or self.total_length
+        # For BOM. A cable authored with `total_length:` carries no `length:`.
+        #
+        # A bundle with PER-WIRE lists has no single meaningful amount: both
+        # self.length and self.total_length hold max(list) by the list-parsing
+        # convention above, which is one wire's value masquerading as the
+        # cable's. Bundles are billed per wire (Cable.bom_hash raises for them,
+        # and populate_bom iterates wire_objects), so this is unread today;
+        # None keeps a future reader from silently picking up that max.
+        if self.category == "bundle" and (self.length_list or self.total_length_list):
+            self.amount = None
+        else:
+            self.amount = self.length or self.total_length
 
         if self.wirecount:  # number of wires explicitly defined
             if self.colors:  # use custom color palette (partly or looped if needed)
