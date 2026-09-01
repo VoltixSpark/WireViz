@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Union
 
+import graphviz
 from graphviz import Graph
 
 import wireviz.wv_colors
@@ -611,20 +612,45 @@ class Harness:
             self._graph = self.create_graph()
         return self._graph  # return cached graph
 
+    @staticmethod
+    def _pipe(graph, fmt: str) -> bytes:
+        """Render `graph` in memory without graphviz's deadlock-prone stdin path.
+
+        `Graph.pipe()` feeds dot line by line through
+        graphviz.backend.execute._run_input_lines, which writes ALL of stdin in
+        a blocking loop and only calls communicate() afterwards, while
+        run_check has set stdout=stderr=PIPE. That is the pattern the
+        subprocess docs warn against: once dot has produced enough output to
+        fill the OS pipe buffer it blocks on its own write and stops reading
+        stdin, so the next write into a child that is no longer draining
+        raises BrokenPipeError (WinError 232 / errno 32).
+
+        It is timing and size dependent, which is the worst property a bug can
+        have. Small diagrams never hit it, so it surfaced only when a 37-pin
+        connector made the graph large enough, and only in the live GUI preview
+        (a worker thread) rather than in file-based rendering, which goes
+        through graph.render() and never touches this code.
+
+        graphviz.pipe(engine, format, data) takes the whole source as one
+        buffer and hands it to subprocess.run(input=...), which drains stdout
+        and stdin together. Same output, no race.
+        """
+        return graphviz.pipe(
+            engine=graph.engine,
+            format=fmt,
+            data=graph.source.encode("utf-8"),
+        )
+
     @property
     def png(self):
-        from io import BytesIO
-
-        graph = self.graph
-        data = BytesIO()
-        data.write(graph.pipe(format="png"))
-        data.seek(0)
-        return data.read()
+        return self._pipe(self.graph, "png")
 
     @property
     def svg(self):  # TODO?: Verify xml encoding="utf-8" in SVG?
         graph = self.graph
-        return embed_svg_images(graph.pipe(format="svg").decode("utf-8"), Path.cwd())
+        return embed_svg_images(
+            self._pipe(graph, "svg").decode("utf-8"), Path.cwd()
+        )
 
     def output(
         self,
