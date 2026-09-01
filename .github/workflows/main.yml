@@ -10,13 +10,15 @@ jobs:
         # ubuntu-22.04 supports Python 3.7-3.12
         # ubuntu-24.04 (currently latest & preferred) supports Python 3.9-3.12
         # More details: https://github.com/actions/runner-images/issues/10636
+        # 3.7 and 3.8 were inherited from upstream and have never worked in
+        # THIS fork: wv_output.py embeds fonts via importlib.resources.files(),
+        # added in 3.9. Both legs failed with "module 'importlib.resources' has
+        # no attribute 'files'", and because the matrix fails fast they
+        # cancelled the versions that do work, so the whole workflow reported
+        # failure while every supported Python passed. setup.py now declares
+        # python_requires=">=3.9" to match.
         os: [ubuntu-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
-        include:
-          - os: ubuntu-22.04
-            python-version: "3.7"
-          - os: ubuntu-22.04
-            python-version: "3.8"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

@@ -42,11 +42,16 @@ setup(
             "wireviz=wireviz.wv_cli:wireviz",
         ],
     },
+    # 3.9 is a hard floor for this fork, not a preference: the SVG font
+    # embedding in wv_output.py calls importlib.resources.files(), which does
+    # not exist before 3.9. CI proved it, failing on 3.7 and 3.8 with
+    # "module 'importlib.resources' has no attribute 'files'" while every
+    # supported version passed.
+    python_requires=">=3.9",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Environment :: Console",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
