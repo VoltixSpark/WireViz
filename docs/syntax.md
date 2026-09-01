@@ -169,6 +169,9 @@ tweak:  # optional tweaking of .gv output
                                         # (often shorter than the wire length, e.g.
                                         # sleeve_length: 15 in). Same unit rules as
                                         # length. Shown next to the "Braid" chip.
+  sleeve_covering: <str>  # optional; "braid" (default) or "heatshrink". Flat
+                          # alias for sleeve.covering; affects the drawn band
+                          # only, since the flat keys add no BOM line.
   sleeve:               # nested sleeve object (fork ext; dev/unreleased, targets
                         # harness-ext-1.3). Canonical replacement for the flat
                         # sleeve_color/sleeve_length keys above, which remain
@@ -191,10 +194,12 @@ tweak:  # optional tweaking of .gv output
                               # band and defaults type to "Braided sleeving";
                               # "heatshrink" draws a solid continuous band (no
                               # weave -- heatshrink is not woven) and defaults
-                              # type to "Heat shrink tubing". Only settable via
-                              # the nested sleeve: block, not the flat
-                              # sleeve_color/sleeve_length keys. Any other value
+                              # type to "Heat shrink tubing". Any other value
                               # raises an error at parse time.
+                              # A flat `sleeve_covering:` key is also accepted
+                              # (see the flat aliases above), but it only
+                              # affects the drawing: the flat keys add no BOM
+                              # line, so there is no description to default.
     type: <str>              # optional; BOM description (default depends on
                               # covering -- see above)
     subtype: <str>           # optional; appended to the description
